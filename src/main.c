@@ -149,7 +149,6 @@ typedef struct CartridgeHeader {
 } CartridgeHeader;
 
 
-
 #define INSTRUCTION_FORMAT_DATA_PROCESSING                              (1 << 25)
 #define INSTRUCTION_FORMAT_MULTIPLY                                     (0b0000000000000000000010010000)
 #define INSTRUCTION_FORMAT_MULTIPLY_LONG                                (0b0000100000000000000010010000)
@@ -165,23 +164,6 @@ typedef struct CartridgeHeader {
 #define INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION                   (0b111 << 25)
 #define INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER                ((0b111 << 25) | (1 << 4))
 #define INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT                           (0b1111 << 24)
-
-
-// #define CONDITION_EQ (0b0000)
-// #define CONDITION_NE (0b0001)
-// #define CONDITION_CS (0b0010)
-// #define CONDITION_CC (0b0011)
-// #define CONDITION_MI (0b0100)
-// #define CONDITION_PL (0b0101)
-// #define CONDITION_VS (0b0110)
-// #define CONDITION_VC (0b0111)
-// #define CONDITION_HI (0b1000)
-// #define CONDITION_LS (0b1001)
-// #define CONDITION_GE (0b1010)
-// #define CONDITION_LT (0b1011)
-// #define CONDITION_GT (0b1100)
-// #define CONDITION_LE (0b1101)
-// #define CONDITION_AL (0b1110)
 
 typedef enum Condition {
     CONDITION_EQ = 0b0000,
@@ -290,7 +272,8 @@ execute()
                 cpu.lr = cpu.pc - 1;
             }
 
-            cpu.pc += decoded_instruction.offset;
+            cpu.pc += (decoded_instruction.offset << 2); // TODO: check if this is OK
+            current_instruction = 0;
         } break;
     }
 
