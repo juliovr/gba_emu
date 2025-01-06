@@ -14,6 +14,11 @@ typedef int16_t  s16;
 typedef int32_t  s32;
 
 
+#define true 1
+#define false 0
+typedef int bool;
+
+
 typedef struct CPU {
     u32 r0;
     u32 r1;
@@ -47,18 +52,18 @@ CPU cpu = {0};
 //
 // Control Bits
 //
-#define MODE_BITS                       ((cpu.cpsr >> 0) && 0b11111)
-#define STATE_BIT                       ((cpu.cpsr >> 5) && 1)
-#define FIQ_DISABLE                     ((cpu.cpsr >> 6) && 1)
-#define IRQ_DISABLE                     ((cpu.cpsr >> 7) && 1)
+#define CONTROL_BITS_MODE   ((cpu.cpsr >> 0) && 0b11111)    /* Mode bits */
+#define CONTROL_BITS_T      ((cpu.cpsr >> 5) && 1)          /* State bit */
+#define CONTROL_BITS_F      ((cpu.cpsr >> 6) && 1)          /* FIQ disable */
+#define CONTROL_BITS_I      ((cpu.cpsr >> 7) && 1)          /* IRQ disable */
 
 //
 // Codition Code Flags
 //
-#define CONDITION_OVERFLOW              ((cpu.cpsr >> 28) && 1)
-#define CONDITION_CARRY                 ((cpu.cpsr >> 29) && 1)
-#define CONDITION_ZERO                  ((cpu.cpsr >> 30) && 1)
-#define CONDITION_NEGATIVE_OR_LESS_THAN ((cpu.cpsr >> 31) && 1)
+#define CONDITION_V     ((cpu.cpsr >> 28) && 1)     /* Overflow */
+#define CONDITION_C     ((cpu.cpsr >> 29) && 1)     /* Carry or borrow extended */
+#define CONDITION_Z     ((cpu.cpsr >> 30) && 1)     /* Zero */
+#define CONDITION_N     ((cpu.cpsr >> 31) && 1)     /* Negative or less than */
 
 
 // TODO: is it necessary to make fields for the "Not used" data to make the load simpler?
@@ -162,6 +167,40 @@ typedef struct CartridgeHeader {
 #define INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT                           (0b1111 << 24)
 
 
+// #define CONDITION_EQ (0b0000)
+// #define CONDITION_NE (0b0001)
+// #define CONDITION_CS (0b0010)
+// #define CONDITION_CC (0b0011)
+// #define CONDITION_MI (0b0100)
+// #define CONDITION_PL (0b0101)
+// #define CONDITION_VS (0b0110)
+// #define CONDITION_VC (0b0111)
+// #define CONDITION_HI (0b1000)
+// #define CONDITION_LS (0b1001)
+// #define CONDITION_GE (0b1010)
+// #define CONDITION_LT (0b1011)
+// #define CONDITION_GT (0b1100)
+// #define CONDITION_LE (0b1101)
+// #define CONDITION_AL (0b1110)
+
+typedef enum Condition {
+    CONDITION_EQ = 0b0000,
+    CONDITION_NE = 0b0001,
+    CONDITION_CS = 0b0010,
+    CONDITION_CC = 0b0011,
+    CONDITION_MI = 0b0100,
+    CONDITION_PL = 0b0101,
+    CONDITION_VS = 0b0110,
+    CONDITION_VC = 0b0111,
+    CONDITION_HI = 0b1000,
+    CONDITION_LS = 0b1001,
+    CONDITION_GE = 0b1010,
+    CONDITION_LT = 0b1011,
+    CONDITION_GT = 0b1100,
+    CONDITION_LE = 0b1101,
+    CONDITION_AL = 0b1110,
+} Condition;
+
 typedef enum InstructionType {
     INSTRUCTION_NONE,
 
@@ -206,18 +245,46 @@ u32 current_instruction;
 
 typedef struct Instruction {
     InstructionType type;
+    Condition condition;
     int offset;
     int L;
 } Instruction;
 
 Instruction decoded_instruction;
 
+static bool
+should_execute_instruction(Condition condition)
+{
+    switch (condition) {
+        case CONDITION_EQ: return (CONDITION_Z == 1);
+        case CONDITION_NE: return (CONDITION_Z == 0);
+        case CONDITION_CS: return (CONDITION_C == 1);
+        case CONDITION_CC: return (CONDITION_C == 0);
+        case CONDITION_MI: return (CONDITION_N == 1);
+        case CONDITION_PL: return (CONDITION_N == 0);
+        case CONDITION_VS: return (CONDITION_V == 1);
+        case CONDITION_VC: return (CONDITION_V == 0);
+        case CONDITION_HI: return (CONDITION_C == 1 && CONDITION_Z == 0);
+        case CONDITION_LS: return (CONDITION_C == 0 && CONDITION_Z == 1);
+        case CONDITION_GE: return (CONDITION_N == CONDITION_V);
+        case CONDITION_LT: return (CONDITION_N != CONDITION_V);
+        case CONDITION_GT: return (CONDITION_Z == 0 && CONDITION_N == CONDITION_V);
+        case CONDITION_LE: return (CONDITION_Z == 1 || CONDITION_N != CONDITION_V);
+        case CONDITION_AL: return true; // Always
+        default: {
+            fprintf(stderr, "Unexpected condition: %x\n", condition);
+            exit(1);
+        }
+    }
+}
+
 static void
 execute()
 {
-    switch (decoded_instruction.type) {
-        case INSTRUCTION_NONE: return;
+    if (decoded_instruction.type == INSTRUCTION_NONE) return;
+    if (!should_execute_instruction(decoded_instruction.condition)) return;
 
+    switch (decoded_instruction.type) {
         case INSTRUCTION_B: {
             if (decoded_instruction.L) {
                 cpu.lr = cpu.pc - 1;
@@ -234,6 +301,8 @@ static void
 decode()
 {
     if (current_instruction == 0) return;
+
+    int condition = (current_instruction >> 28) & 0xF;
 
     // if ((current_instruction & INSTRUCTION_FORMAT_BRANCH) == INSTRUCTION_FORMAT_BRANCH) {
     //     decoded_instruction = (Instruction) {
@@ -301,6 +370,9 @@ decode()
         fprintf(stderr, "Instruction unknown: 0x%x\n", current_instruction);
         exit(1);
     }
+
+
+    decoded_instruction.condition = condition;
 
     current_instruction = 0;
 }
