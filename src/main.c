@@ -20,27 +20,32 @@ typedef int bool;
 
 
 typedef struct CPU {
-    u32 r0;
-    u32 r1;
-    u32 r2;
-    u32 r3;
-    u32 r4;
-    u32 r5;
-    u32 r6;
-    u32 r7;
-    u32 r8;
-    u32 r9;
-    u32 r10;
-    u32 r11;
-    u32 r12;
-    u32 r13;
     union {
-        u32 r14;
-        u32 lr;
-    };
-    union {
-        u32 r15;
-        u32 pc;
+        struct {
+            u32 r0;
+            u32 r1;
+            u32 r2;
+            u32 r3;
+            u32 r4;
+            u32 r5;
+            u32 r6;
+            u32 r7;
+            u32 r8;
+            u32 r9;
+            u32 r10;
+            u32 r11;
+            u32 r12;
+            u32 r13;
+            union {
+                u32 r14;
+                u32 lr;
+            };
+            union {
+                u32 r15;
+                u32 pc;
+            };
+        };
+        u32 r[16];
     };
 
     u32 cpsr; // Current Program Status Register
@@ -64,6 +69,8 @@ CPU cpu = {0};
 #define CONDITION_C     ((cpu.cpsr >> 29) && 1)     /* Carry or borrow extended */
 #define CONDITION_Z     ((cpu.cpsr >> 30) && 1)     /* Zero */
 #define CONDITION_N     ((cpu.cpsr >> 31) && 1)     /* Negative or less than */
+
+#define SET_CONDITION_C(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | (bit & 1) << 29))
 
 
 // TODO: is it necessary to make fields for the "Not used" data to make the load simpler?
@@ -165,6 +172,14 @@ typedef struct CartridgeHeader {
 #define INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER                ((0b111 << 25) | (1 << 4))
 #define INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT                           (0b1111 << 24)
 
+
+typedef enum ShiftType {
+    SHIFT_TYPE_LOGICAL_LEFT     = 0b00,
+    SHIFT_TYPE_LOGICAL_RIGHT    = 0b01,
+    SHIFT_TYPE_ARITHMETIC_RIGHT = 0b10,
+    SHIFT_TYPE_ROTATE_RIGHT     = 0b11,
+} ShiftType;
+
 typedef enum Condition {
     CONDITION_EQ = 0b0000,
     CONDITION_NE = 0b0001,
@@ -186,7 +201,28 @@ typedef enum Condition {
 typedef enum InstructionType {
     INSTRUCTION_NONE,
 
+    // Branch
     INSTRUCTION_B,
+
+    // Data processing
+    INSTRUCTION_AND,
+    INSTRUCTION_EOR,
+    INSTRUCTION_SUB,
+    INSTRUCTION_RSB,
+    INSTRUCTION_ADD,
+    INSTRUCTION_ADC,
+    INSTRUCTION_SBC,
+    INSTRUCTION_RSC,
+    INSTRUCTION_TST,
+    INSTRUCTION_TEQ,
+    INSTRUCTION_CMP,
+    INSTRUCTION_CMN,
+    INSTRUCTION_ORR,
+    INSTRUCTION_MOV,
+    INSTRUCTION_BIC,
+    INSTRUCTION_MVN,
+
+    INSTRUCTION_LDM_STM,
 } InstructionType;
 
 static void
@@ -230,6 +266,9 @@ typedef struct Instruction {
     Condition condition;
     int offset;
     int L;
+    int first_operand;
+    int second_operand;
+    int destination_register;
 } Instruction;
 
 Instruction decoded_instruction;
@@ -264,20 +303,89 @@ static void
 execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) return;
-    if (!should_execute_instruction(decoded_instruction.condition)) return;
+    if (!should_execute_instruction(decoded_instruction.condition)) {
+        printf("...Skipped\n");
+        return;
+    }
 
     switch (decoded_instruction.type) {
+        // Branch
         case INSTRUCTION_B: {
             if (decoded_instruction.L) {
                 cpu.lr = cpu.pc - 1;
             }
 
-            cpu.pc += (decoded_instruction.offset << 2); // TODO: check if this is OK
+            cpu.pc += (decoded_instruction.offset << 0); // TODO: check if this is OK
             current_instruction = 0;
+        } break;
+
+        // Data processing
+        case INSTRUCTION_ADD:
+        case INSTRUCTION_AND:
+        case INSTRUCTION_EOR:
+        case INSTRUCTION_SUB:
+        case INSTRUCTION_RSB:
+        case INSTRUCTION_ADC:
+        case INSTRUCTION_SBC:
+        case INSTRUCTION_RSC:
+        case INSTRUCTION_TST:
+        case INSTRUCTION_TEQ:
+        case INSTRUCTION_CMP:
+        case INSTRUCTION_CMN:
+        case INSTRUCTION_ORR:
+        case INSTRUCTION_MOV:
+        case INSTRUCTION_BIC:
+        case INSTRUCTION_MVN:
+        {
+            cpu.r[0] = 1;
+            cpu.r1 = 2;
+        } break;
+
+        case INSTRUCTION_LDM_STM: {
+            printf("IMPLEMENT!!!\n");
         } break;
     }
 
     decoded_instruction = (Instruction){0};
+}
+
+static int
+apply_shift(u32 value, u8 shift, ShiftType shift_type)
+{
+    switch (shift_type) {
+        case SHIFT_TYPE_LOGICAL_LEFT: {
+            u8 carry = (value >> (32 - shift)) & 1;
+            SET_CONDITION_C(carry);
+
+            return value << shift;
+        } break;
+        case SHIFT_TYPE_LOGICAL_RIGHT: {
+            u8 carry = (value >> (shift - 1) & 1);
+            SET_CONDITION_C(carry);
+
+            return value >> shift;
+        } break;
+        case SHIFT_TYPE_ARITHMETIC_RIGHT: {
+            u8 carry = (value >> (shift - 1) & 1);
+            SET_CONDITION_C(carry);
+
+            u8 msb = (value >> 31) & 1;
+            u32 msb_replicated = (-msb << (32 - shift));
+
+            return (value >> shift) | msb_replicated;
+        } break;
+        case SHIFT_TYPE_ROTATE_RIGHT: {
+            u8 carry = (value >> (shift - 1) & 1);
+            SET_CONDITION_C(carry);
+
+            u32 value_to_rotate = value & ((1 << shift) - 1);
+            u32 rotate_masked = value_to_rotate << (32 - shift);
+
+            return (value >> shift) | rotate_masked;
+        } break;
+    }
+
+    return value;
 }
 
 static void
@@ -286,19 +394,6 @@ decode()
     if (current_instruction == 0) return;
 
     int condition = (current_instruction >> 28) & 0xF;
-
-    // if ((current_instruction & INSTRUCTION_FORMAT_BRANCH) == INSTRUCTION_FORMAT_BRANCH) {
-    //     decoded_instruction = (Instruction) {
-    //         .type = INSTRUCTION_B,
-    //         .offset = current_instruction & 0xFFFFFF,
-    //         .L = current_instruction & (1 << 24),
-    //     };
-    // } else if ((current_instruction & INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
-    //     printf("Data processing: 0x%x\n", current_instruction);
-    // } else {
-    //     fprintf(stderr, "Instruction unimplemented: 0x%x\n", current_instruction);
-    //     return;
-    // }
 
     if ((current_instruction &INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
         printf("INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT: 0x%x\n", current_instruction);
@@ -322,6 +417,9 @@ decode()
     }
     else if ((current_instruction &INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) == INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) {
         printf("INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER: 0x%x\n", current_instruction);
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_LDM_STM,
+        };
     }
     else if ((current_instruction &INSTRUCTION_FORMAT_UNDEFINED) == INSTRUCTION_FORMAT_UNDEFINED) {
         printf("INSTRUCTION_FORMAT_UNDEFINED: 0x%x\n", current_instruction);
@@ -349,6 +447,62 @@ decode()
     }
     else if ((current_instruction &INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
         printf("INSTRUCTION_FORMAT_DATA_PROCESSING: 0x%x\n", current_instruction);
+        
+        int S = (current_instruction >> 20) & 1; // Set condition codes
+        int I = (current_instruction >> 25) & 1; // Immediate operand
+        int opcode = (current_instruction >> 21) & 0b1111;
+        InstructionType type = 0;
+        switch (opcode) {
+            case 0b0000: type = INSTRUCTION_AND; break;
+            case 0b0001: type = INSTRUCTION_EOR; break;
+            case 0b0010: type = INSTRUCTION_SUB; break;
+            case 0b0011: type = INSTRUCTION_RSB; break;
+            case 0b0100: type = INSTRUCTION_ADD; break;
+            case 0b0101: type = INSTRUCTION_ADC; break;
+            case 0b0110: type = INSTRUCTION_SBC; break;
+            case 0b0111: type = INSTRUCTION_RSC; break;
+            case 0b1000: type = INSTRUCTION_TST; break;
+            case 0b1001: type = INSTRUCTION_TEQ; break;
+            case 0b1010: type = INSTRUCTION_CMP; break;
+            case 0b1011: type = INSTRUCTION_CMN; break;
+            case 0b1100: type = INSTRUCTION_ORR; break;
+            case 0b1101: type = INSTRUCTION_MOV; break;
+            case 0b1110: type = INSTRUCTION_BIC; break;
+            case 0b1111: type = INSTRUCTION_MVN; break;
+        }
+
+        int rn = (current_instruction >> 16) & 0xF; // Source register
+        int rd = (current_instruction >> 12) & 0xF; // Destination register
+
+        int second_operand;
+        if (I) {
+            u8 imm = current_instruction & 0xFF;
+            u8 rotate = (current_instruction >> 8) & 0xF;
+
+            second_operand = apply_shift(imm, rotate, SHIFT_TYPE_ROTATE_RIGHT);
+        } else {
+            int rm = current_instruction & 0xF;
+            // TODO: the least significant discarded bit becomes the shifter carry output which may be latched into the C bit of the CPSR when the ALU operation is in the logical class
+            u8 shift = (current_instruction >> 4) & 0xFF;
+            u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
+            if (shift & 1) {
+                // Shift register
+                u8 rs = (shift >> 4) & 0xF ; // Register to the value to shift.
+                second_operand = apply_shift(cpu.r[rm], (u8)(cpu.r[rs] & 0xF), shift_type);
+            } else {
+                // Shift amount
+                u8 shift_amount = (shift >> 3) & 0b11111;
+                second_operand = apply_shift(cpu.r[rm], shift_amount, shift_type);
+            }
+        }
+
+        decoded_instruction = (Instruction) {
+            .type = type,
+            .first_operand = rn,
+            .second_operand = second_operand,
+            .destination_register = rd,
+        };
+
     } else {
         fprintf(stderr, "Instruction unknown: 0x%x\n", current_instruction);
         exit(1);
