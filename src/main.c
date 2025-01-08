@@ -54,21 +54,23 @@ typedef struct CPU {
 
 CPU cpu = {0};
 
+int pc_incremented = 0;
+
 //
 // Control Bits
 //
-#define CONTROL_BITS_MODE   ((cpu.cpsr >> 0) && 0b11111)    /* Mode bits */
-#define CONTROL_BITS_T      ((cpu.cpsr >> 5) && 1)          /* State bit */
-#define CONTROL_BITS_F      ((cpu.cpsr >> 6) && 1)          /* FIQ disable */
-#define CONTROL_BITS_I      ((cpu.cpsr >> 7) && 1)          /* IRQ disable */
+#define CONTROL_BITS_MODE       ((cpu.cpsr >> 0) & 0b11111)    /* Mode bits */
+#define CONTROL_BITS_T          ((cpu.cpsr >> 5) & 1)          /* State bit */
+#define CONTROL_BITS_F          ((cpu.cpsr >> 6) & 1)          /* FIQ disable */
+#define CONTROL_BITS_I          ((cpu.cpsr >> 7) & 1)          /* IRQ disable */
 
 //
 // Codition Code Flags
 //
-#define CONDITION_V     ((cpu.cpsr >> 28) && 1)     /* Overflow */
-#define CONDITION_C     ((cpu.cpsr >> 29) && 1)     /* Carry or borrow extended */
-#define CONDITION_Z     ((cpu.cpsr >> 30) && 1)     /* Zero */
-#define CONDITION_N     ((cpu.cpsr >> 31) && 1)     /* Negative or less than */
+#define CONDITION_V             ((cpu.cpsr >> 28) & 1)     /* Overflow */
+#define CONDITION_C             ((cpu.cpsr >> 29) & 1)     /* Carry or borrow extended */
+#define CONDITION_Z             ((cpu.cpsr >> 30) & 1)     /* Zero */
+#define CONDITION_N             ((cpu.cpsr >> 31) & 1)     /* Negative or less than */
 
 #define SET_CONDITION_V(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 28)) | ((bit) & 1) << 28))
 #define SET_CONDITION_C(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | ((bit) & 1) << 29))
@@ -159,7 +161,7 @@ typedef struct CartridgeHeader {
 } CartridgeHeader;
 
 
-#define INSTRUCTION_FORMAT_DATA_PROCESSING                              (1 << 25)
+#define INSTRUCTION_FORMAT_DATA_PROCESSING                              (0)
 #define INSTRUCTION_FORMAT_MULTIPLY                                     (0b0000000000000000000010010000)
 #define INSTRUCTION_FORMAT_MULTIPLY_LONG                                (0b0000100000000000000010010000)
 #define INSTRUCTION_FORMAT_SINGLE_DATA_SWAP                             (0b0001000000000000000010010000)
@@ -207,7 +209,7 @@ typedef enum InstructionType {
     // Branch
     INSTRUCTION_B,
 
-    // Data processing
+    // Data Processing
     INSTRUCTION_AND,
     INSTRUCTION_EOR,
     INSTRUCTION_SUB,
@@ -225,7 +227,13 @@ typedef enum InstructionType {
     INSTRUCTION_BIC,
     INSTRUCTION_MVN,
 
-    INSTRUCTION_LDM_STM,
+    // Single Data Transfer
+    INSTRUCTION_LDR,
+    INSTRUCTION_STR,
+
+    // Block Data Transfer
+    INSTRUCTION_LDM,
+    INSTRUCTION_STM,
 } InstructionType;
 
 static void
@@ -272,6 +280,10 @@ typedef struct Instruction {
     u8 S;
     u8 rn;
     u8 I;
+    u8 P;
+    u8 U;
+    u8 W;
+    u8 B;
     u16 second_operand;
     u8 rd;
 } Instruction;
@@ -366,14 +378,6 @@ get_second_operand(u8 *carry)
     return second_operand;
 }
 
-static void
-update_cpsr(u8 S)
-{
-    if (S == 0) return;
-
-    
-}
-
 #define DATA_PROCESSING(expression)                                 \
     u8 carry = 0;                                                   \
     /*u32 second_operand = get_second_operand(&carry);*/                \
@@ -390,7 +394,7 @@ execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) return;
     if (!should_execute_instruction(decoded_instruction.condition)) {
-        printf("...Skipped\n");
+        printf("Condition %d...Skipped\n", decoded_instruction.condition);
         return;
     }
 
@@ -401,8 +405,7 @@ execute()
                 cpu.lr = cpu.pc - 1;
             }
 
-            // cpu.pc += (decoded_instruction.offset << 0);
-            cpu.pc += (decoded_instruction.offset << 2); // TODO: check if this shift by 2 is OK
+            cpu.pc += (decoded_instruction.offset << 2);
             current_instruction = 0;
         } break;
 
@@ -498,8 +501,14 @@ execute()
             cpu.r[decoded_instruction.rd] = result;
         } break;
 
-        case INSTRUCTION_LDM_STM: {
-            printf("IMPLEMENT!!!\n");
+
+        // Block Data Transfer
+        case INSTRUCTION_LDM: {
+            u32 address = cpu.r[decoded_instruction.rn];
+        } break;
+
+        case INSTRUCTION_STM: {
+            u32 address = cpu.r[decoded_instruction.rn];
         } break;
     }
 
@@ -512,21 +521,19 @@ decode()
 {
     if (current_instruction == 0) return;
 
-    int condition = (current_instruction >> 28) & 0xF;
-
-    if ((current_instruction &INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
+    if ((current_instruction & INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
         printf("INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) {
         printf("INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) {
         printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) {
         printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_BRANCH) == INSTRUCTION_FORMAT_BRANCH) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_BRANCH) == INSTRUCTION_FORMAT_BRANCH) {
         printf("INSTRUCTION_FORMAT_BRANCH: 0x%x\n", current_instruction);
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_B,
@@ -534,37 +541,72 @@ decode()
             .L = (u8)((current_instruction >> 24) & 1),
         };
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) == INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) == INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) {
         printf("INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER: 0x%x\n", current_instruction);
+
+        int opcode = (current_instruction >> 20) & 1;
+        InstructionType type = 0;
+        switch (opcode) {
+            case 0: type = INSTRUCTION_STM; break;
+            case 1: type = INSTRUCTION_LDM; break;
+        }
+
         decoded_instruction = (Instruction) {
-            .type = INSTRUCTION_LDM_STM,
+            .type = type,
+            .P = (current_instruction >> 24) & 1,
+            .U = (current_instruction >> 23) & 1,
+            .S = (current_instruction >> 22) & 1,
+            .W = (current_instruction >> 21) & 1,
+            .L = (current_instruction >> 20) & 1,
+            .rn = (current_instruction >> 16) & 0xF,
+            .second_operand = current_instruction & 0xFFFF,
         };
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_UNDEFINED) == INSTRUCTION_FORMAT_UNDEFINED) {
-        printf("INSTRUCTION_FORMAT_UNDEFINED: 0x%x\n", current_instruction);
-    }
-    else if ((current_instruction &INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) == INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) {
+    // else if ((current_instruction &INSTRUCTION_FORMAT_UNDEFINED) == INSTRUCTION_FORMAT_UNDEFINED) {
+    //     printf("INSTRUCTION_FORMAT_UNDEFINED: 0x%x\n", current_instruction);
+    // }
+    else if ((current_instruction & INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) == INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) {
         printf("INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER: 0x%x\n", current_instruction);
+
+        int opcode = (current_instruction >> 20) & 1;
+        InstructionType type = 0;
+        switch (opcode) {
+            case 0: type = INSTRUCTION_STR; break;
+            case 1: type = INSTRUCTION_LDR; break;
+        }
+
+        decoded_instruction = (Instruction) {
+            .type = type,
+            .I = (current_instruction >> 25) & 1,
+            .P = (current_instruction >> 24) & 1,
+            .U = (current_instruction >> 23) & 1,
+            .B = (current_instruction >> 22) & 1,
+            .W = (current_instruction >> 21) & 1,
+            .L = (current_instruction >> 20) & 1,
+            .rn = (current_instruction >> 16) & 0xF,
+            .rd = (current_instruction >> 12) & 0xF,
+            .offset = current_instruction & 0xFFF,
+        };
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) {
         printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) {
         printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) == INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) == INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) {
         printf("INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) == INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) == INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) {
         printf("INSTRUCTION_FORMAT_SINGLE_DATA_SWAP: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_MULTIPLY_LONG) == INSTRUCTION_FORMAT_MULTIPLY_LONG) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_MULTIPLY_LONG) == INSTRUCTION_FORMAT_MULTIPLY_LONG) {
         printf("INSTRUCTION_FORMAT_MULTIPLY_LONG: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_MULTIPLY) == INSTRUCTION_FORMAT_MULTIPLY) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_MULTIPLY) == INSTRUCTION_FORMAT_MULTIPLY) {
         printf("INSTRUCTION_FORMAT_MULTIPLY: 0x%x\n", current_instruction);
     }
-    else if ((current_instruction &INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
+    else if ((current_instruction & INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
         printf("INSTRUCTION_FORMAT_DATA_PROCESSING: 0x%x\n", current_instruction);
         
         int opcode = (current_instruction >> 21) & 0b1111;
@@ -638,7 +680,7 @@ decode()
     }
 
 
-    decoded_instruction.condition = condition;
+    decoded_instruction.condition = (current_instruction >> 28) & 0xF;;
 
     current_instruction = 0;
 }
@@ -647,13 +689,12 @@ static void
 fetch()
 {
     current_instruction = ((u32 *)memory.game_pak_rom)[cpu.pc++];
+    pc_incremented++;
 }
 
 static void
 process_instructions()
 {
-    u32 *instructions = (u32 *)memory.game_pak_rom;
-
     // Emulating pipelining.
     while (1) {
         // TODO: in the future, check if this separation works (because of the order they are executed).
