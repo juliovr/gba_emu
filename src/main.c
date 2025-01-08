@@ -70,7 +70,10 @@ CPU cpu = {0};
 #define CONDITION_Z     ((cpu.cpsr >> 30) && 1)     /* Zero */
 #define CONDITION_N     ((cpu.cpsr >> 31) && 1)     /* Negative or less than */
 
-#define SET_CONDITION_C(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | (bit & 1) << 29))
+#define SET_CONDITION_V(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 28)) | ((bit) & 1) << 28))
+#define SET_CONDITION_C(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | ((bit) & 1) << 29))
+#define SET_CONDITION_Z(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 30)) | ((bit) & 1) << 30))
+#define SET_CONDITION_N(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 31)) | ((bit) & 1) << 31))
 
 
 // TODO: is it necessary to make fields for the "Not used" data to make the load simpler?
@@ -265,10 +268,12 @@ typedef struct Instruction {
     InstructionType type;
     Condition condition;
     int offset;
-    int L;
-    int first_operand;
-    int second_operand;
-    int destination_register;
+    u8 L;
+    u8 S;
+    u8 rn;
+    u8 I;
+    u16 second_operand;
+    u8 rd;
 } Instruction;
 
 Instruction decoded_instruction;
@@ -299,6 +304,87 @@ should_execute_instruction(Condition condition)
     }
 }
 
+static int
+apply_shift(u32 value, u8 shift, ShiftType shift_type, u8 *carry)
+{
+    switch (shift_type) {
+        case SHIFT_TYPE_LOGICAL_LEFT: {
+            *carry = (value >> (32 - shift)) & 1;
+
+            return value << shift;
+        } break;
+        case SHIFT_TYPE_LOGICAL_RIGHT: {
+            *carry = (value >> (shift - 1) & 1);
+            
+            return value >> shift;
+        } break;
+        case SHIFT_TYPE_ARITHMETIC_RIGHT: {
+            *carry = (value >> (shift - 1) & 1);
+            
+            u8 msb = (value >> 31) & 1;
+            u32 msb_replicated = (-msb << (32 - shift));
+
+            return (value >> shift) | msb_replicated;
+        } break;
+        case SHIFT_TYPE_ROTATE_RIGHT: {
+            *carry = (value >> (shift - 1) & 1);
+            
+            u32 value_to_rotate = value & ((1 << shift) - 1);
+            u32 rotate_masked = value_to_rotate << (32 - shift);
+
+            return (value >> shift) | rotate_masked;
+        } break;
+    }
+
+    return value;
+}
+
+static u32
+get_second_operand(u8 *carry)
+{
+    int second_operand;
+    if (decoded_instruction.I) {
+        u8 imm = decoded_instruction.second_operand & 0xFF;
+        u8 rotate = (decoded_instruction.second_operand >> 8) & 0xF;
+
+        second_operand = apply_shift(imm, rotate, SHIFT_TYPE_ROTATE_RIGHT, carry);
+    } else {
+        int rm = decoded_instruction.second_operand & 0xF;
+        u8 shift = (decoded_instruction.second_operand >> 4) & 0xFF;
+        u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
+        if (shift & 1) {
+            // Shift register
+            u8 rs = (shift >> 4) & 0xF ; // Register to the value to shift.
+            second_operand = apply_shift(cpu.r[rm], (u8)(cpu.r[rs] & 0xF), shift_type, carry);
+        } else {
+            // Shift amount
+            u8 shift_amount = (shift >> 3) & 0b11111;
+            second_operand = apply_shift(cpu.r[rm], shift_amount, shift_type, carry);
+        }
+    }
+
+    return second_operand;
+}
+
+static void
+update_cpsr(u8 S)
+{
+    if (S == 0) return;
+
+    
+}
+
+#define DATA_PROCESSING(expression)                                 \
+    u8 carry = 0;                                                   \
+    /*u32 second_operand = get_second_operand(&carry);*/                \
+    u32 result = (expression);                                      \
+                                                                    \
+    if (decoded_instruction.S && decoded_instruction.rd != 15) {    \
+        SET_CONDITION_C(carry);                                     \
+        SET_CONDITION_Z(result == 0);                               \
+        SET_CONDITION_N(result >> 31);                              \
+    }
+
 static void
 execute()
 {
@@ -315,30 +401,101 @@ execute()
                 cpu.lr = cpu.pc - 1;
             }
 
-            cpu.pc += (decoded_instruction.offset << 0); // TODO: check if this is OK
+            // cpu.pc += (decoded_instruction.offset << 0);
+            cpu.pc += (decoded_instruction.offset << 2); // TODO: check if this shift by 2 is OK
             current_instruction = 0;
         } break;
 
         // Data processing
-        case INSTRUCTION_ADD:
-        case INSTRUCTION_AND:
-        case INSTRUCTION_EOR:
-        case INSTRUCTION_SUB:
-        case INSTRUCTION_RSB:
-        case INSTRUCTION_ADC:
-        case INSTRUCTION_SBC:
-        case INSTRUCTION_RSC:
-        case INSTRUCTION_TST:
-        case INSTRUCTION_TEQ:
-        case INSTRUCTION_CMP:
-        case INSTRUCTION_CMN:
-        case INSTRUCTION_ORR:
-        case INSTRUCTION_MOV:
-        case INSTRUCTION_BIC:
-        case INSTRUCTION_MVN:
-        {
-            cpu.r[0] = 1;
-            cpu.r1 = 2;
+        case INSTRUCTION_ADD: {
+            // u8 carry = 0;
+            // u32 second_operand = get_second_operand(&carry);
+            // u32 result = cpu.r[decoded_instruction.rn] + second_operand;
+            
+            // if (decoded_instruction.S && decoded_instruction.rd != 15) {
+            //     SET_CONDITION_C(carry);
+            //     SET_CONDITION_Z(result == 0);
+            //     SET_CONDITION_N(result >> 31);
+            // }
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry));
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_AND: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_EOR: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] ^ get_second_operand(&carry));
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_SUB: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry));
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_RSB: {
+            DATA_PROCESSING(get_second_operand(&carry) - cpu.r[decoded_instruction.rn]);
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_ADC: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry) + carry);
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_SBC: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry) + carry - 1);
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_RSC: {
+            DATA_PROCESSING(get_second_operand(&carry) - cpu.r[decoded_instruction.rn] + carry - 1);
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_TST: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
+        } break;
+        case INSTRUCTION_TEQ: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] ^ get_second_operand(&carry));
+        } break;
+        case INSTRUCTION_CMP: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry));
+        } break;
+        case INSTRUCTION_CMN: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry));
+        } break;
+        case INSTRUCTION_ORR: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] | get_second_operand(&carry));
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_MOV: {
+            DATA_PROCESSING(get_second_operand(&carry));
+            // u8 carry = 0;                                                   
+            // /*u32 second_operand = get_second_operand(&carry);*/                
+            // u32 result = (get_second_operand(&carry));                                      
+                                                                            
+            // if (decoded_instruction.S && decoded_instruction.rd != 15) {    
+            //     SET_CONDITION_C(carry);                                     
+            //     SET_CONDITION_Z(result == 0);                               
+            //     SET_CONDITION_N(result >> 31);                              
+            // }
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_BIC: {
+            DATA_PROCESSING(cpu.r[decoded_instruction.rn] & !get_second_operand(&carry));
+            
+            cpu.r[decoded_instruction.rd] = result;
+        } break;
+        case INSTRUCTION_MVN: {
+            DATA_PROCESSING(!get_second_operand(&carry));
+            
+            cpu.r[decoded_instruction.rd] = result;
         } break;
 
         case INSTRUCTION_LDM_STM: {
@@ -349,44 +506,6 @@ execute()
     decoded_instruction = (Instruction){0};
 }
 
-static int
-apply_shift(u32 value, u8 shift, ShiftType shift_type)
-{
-    switch (shift_type) {
-        case SHIFT_TYPE_LOGICAL_LEFT: {
-            u8 carry = (value >> (32 - shift)) & 1;
-            SET_CONDITION_C(carry);
-
-            return value << shift;
-        } break;
-        case SHIFT_TYPE_LOGICAL_RIGHT: {
-            u8 carry = (value >> (shift - 1) & 1);
-            SET_CONDITION_C(carry);
-
-            return value >> shift;
-        } break;
-        case SHIFT_TYPE_ARITHMETIC_RIGHT: {
-            u8 carry = (value >> (shift - 1) & 1);
-            SET_CONDITION_C(carry);
-
-            u8 msb = (value >> 31) & 1;
-            u32 msb_replicated = (-msb << (32 - shift));
-
-            return (value >> shift) | msb_replicated;
-        } break;
-        case SHIFT_TYPE_ROTATE_RIGHT: {
-            u8 carry = (value >> (shift - 1) & 1);
-            SET_CONDITION_C(carry);
-
-            u32 value_to_rotate = value & ((1 << shift) - 1);
-            u32 rotate_masked = value_to_rotate << (32 - shift);
-
-            return (value >> shift) | rotate_masked;
-        } break;
-    }
-
-    return value;
-}
 
 static void
 decode()
@@ -412,7 +531,7 @@ decode()
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_B,
             .offset = current_instruction & 0xFFFFFF,
-            .L = current_instruction & (1 << 24),
+            .L = (u8)((current_instruction >> 24) & 1),
         };
     }
     else if ((current_instruction &INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) == INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) {
@@ -448,8 +567,6 @@ decode()
     else if ((current_instruction &INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
         printf("INSTRUCTION_FORMAT_DATA_PROCESSING: 0x%x\n", current_instruction);
         
-        int S = (current_instruction >> 20) & 1; // Set condition codes
-        int I = (current_instruction >> 25) & 1; // Immediate operand
         int opcode = (current_instruction >> 21) & 0b1111;
         InstructionType type = 0;
         switch (opcode) {
@@ -471,9 +588,18 @@ decode()
             case 0b1111: type = INSTRUCTION_MVN; break;
         }
 
-        int rn = (current_instruction >> 16) & 0xF; // Source register
-        int rd = (current_instruction >> 12) & 0xF; // Destination register
+        
+        decoded_instruction = (Instruction){
+            .type = type,
+            .S = (current_instruction >> 20) & 1, // Set condition codes
+            .I = (current_instruction >> 25) & 1, // Immediate operand
+            .rn = (current_instruction >> 16) & 0xF, // Source register
+            .rd = (current_instruction >> 12) & 0xF, // Destination register
+            // TODO: check the docs when writing into R15 (PC) register.
+            .second_operand = current_instruction & ((1 << 12) - 1),
+        };
 
+#if 0
         int second_operand;
         if (I) {
             u8 imm = current_instruction & 0xFF;
@@ -498,10 +624,13 @@ decode()
 
         decoded_instruction = (Instruction) {
             .type = type,
-            .first_operand = rn,
-            .second_operand = second_operand,
+            .alter_condition_codes = S,
+            .first_operand_register = rn,
+            .second_operand_register = 
+            .second_operand_immediate = second_operand,
             .destination_register = rd,
         };
+#endif
 
     } else {
         fprintf(stderr, "Instruction unknown: 0x%x\n", current_instruction);
