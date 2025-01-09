@@ -208,6 +208,7 @@ typedef enum InstructionType {
 
     // Branch
     INSTRUCTION_B,
+    INSTRUCTION_BX,
 
     // Data Processing
     INSTRUCTION_AND,
@@ -226,6 +227,10 @@ typedef enum InstructionType {
     INSTRUCTION_MOV,
     INSTRUCTION_BIC,
     INSTRUCTION_MVN,
+
+    // PSR Transfer
+    INSTRUCTION_MRS,
+    INSTRUCTION_MSR,
 
     // Single Data Transfer
     INSTRUCTION_LDR,
@@ -286,6 +291,8 @@ typedef struct Instruction {
     u8 B;
     u16 second_operand;
     u8 rd;
+    u8 rm;
+    u16 source_operand;
 } Instruction;
 
 Instruction decoded_instruction;
@@ -411,15 +418,6 @@ execute()
 
         // Data processing
         case INSTRUCTION_ADD: {
-            // u8 carry = 0;
-            // u32 second_operand = get_second_operand(&carry);
-            // u32 result = cpu.r[decoded_instruction.rn] + second_operand;
-            
-            // if (decoded_instruction.S && decoded_instruction.rd != 15) {
-            //     SET_CONDITION_C(carry);
-            //     SET_CONDITION_Z(result == 0);
-            //     SET_CONDITION_N(result >> 31);
-            // }
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
@@ -596,6 +594,11 @@ decode()
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) == INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) {
         printf("INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE: 0x%x\n", current_instruction);
+
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_BX,
+            .rn = (current_instruction & 0xF),
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) == INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) {
         printf("INSTRUCTION_FORMAT_SINGLE_DATA_SWAP: 0x%x\n", current_instruction);
@@ -605,6 +608,8 @@ decode()
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_MULTIPLY) == INSTRUCTION_FORMAT_MULTIPLY) {
         printf("INSTRUCTION_FORMAT_MULTIPLY: 0x%x\n", current_instruction);
+        
+        // TODO: continue from here
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
         printf("INSTRUCTION_FORMAT_DATA_PROCESSING: 0x%x\n", current_instruction);
@@ -630,49 +635,49 @@ decode()
             case 0b1111: type = INSTRUCTION_MVN; break;
         }
 
-        
-        decoded_instruction = (Instruction){
-            .type = type,
-            .S = (current_instruction >> 20) & 1, // Set condition codes
-            .I = (current_instruction >> 25) & 1, // Immediate operand
-            .rn = (current_instruction >> 16) & 0xF, // Source register
-            .rd = (current_instruction >> 12) & 0xF, // Destination register
-            // TODO: check the docs when writing into R15 (PC) register.
-            .second_operand = current_instruction & ((1 << 12) - 1),
-        };
-
-#if 0
-        int second_operand;
-        if (I) {
-            u8 imm = current_instruction & 0xFF;
-            u8 rotate = (current_instruction >> 8) & 0xF;
-
-            second_operand = apply_shift(imm, rotate, SHIFT_TYPE_ROTATE_RIGHT);
-        } else {
-            int rm = current_instruction & 0xF;
-            // TODO: the least significant discarded bit becomes the shifter carry output which may be latched into the C bit of the CPSR when the ALU operation is in the logical class
-            u8 shift = (current_instruction >> 4) & 0xFF;
-            u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
-            if (shift & 1) {
-                // Shift register
-                u8 rs = (shift >> 4) & 0xF ; // Register to the value to shift.
-                second_operand = apply_shift(cpu.r[rm], (u8)(cpu.r[rs] & 0xF), shift_type);
-            } else {
-                // Shift amount
-                u8 shift_amount = (shift >> 3) & 0b11111;
-                second_operand = apply_shift(cpu.r[rm], shift_amount, shift_type);
+        u8 S = (current_instruction >> 20) & 1;
+        if (S == 0 && (type == INSTRUCTION_TST ||
+                       type == INSTRUCTION_TEQ ||
+                       type == INSTRUCTION_CMP ||
+                       type == INSTRUCTION_CMN))
+        {
+            u8 special_type = (current_instruction >> 16) & 0b111111;
+            switch (special_type) {
+                case 0b001111: {
+                    decoded_instruction = (Instruction) {
+                        .type = INSTRUCTION_MRS,
+                        .P = (current_instruction >> 22) & 1,
+                        .rd = (current_instruction >> 12) & 0xF,
+                    };
+                } break;
+                case 0b101001: {
+                    decoded_instruction = (Instruction) {
+                        .type = INSTRUCTION_MSR,
+                        .P = (current_instruction >> 22) & 1,
+                        .rm = current_instruction & 0xF,
+                    };
+                } break;
+                case 0b101000: {
+                    decoded_instruction = (Instruction) {
+                        .type = INSTRUCTION_MSR,
+                        .P = (current_instruction >> 22) & 1,
+                        .source_operand = current_instruction & 0xFFF,
+                    };
+                } break;
             }
         }
-
-        decoded_instruction = (Instruction) {
-            .type = type,
-            .alter_condition_codes = S,
-            .first_operand_register = rn,
-            .second_operand_register = 
-            .second_operand_immediate = second_operand,
-            .destination_register = rd,
-        };
-#endif
+        else
+        {
+            decoded_instruction = (Instruction) {
+                .type = type,
+                .S = S, // Set condition codes
+                .I = (current_instruction >> 25) & 1, // Immediate operand
+                .rn = (current_instruction >> 16) & 0xF, // Source register
+                .rd = (current_instruction >> 12) & 0xF, // Destination register
+                // TODO: check the docs when writing into R15 (PC) register.
+                .second_operand = current_instruction & ((1 << 12) - 1),
+            };
+        }
 
     } else {
         fprintf(stderr, "Instruction unknown: 0x%x\n", current_instruction);
