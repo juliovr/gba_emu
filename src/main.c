@@ -232,13 +232,39 @@ typedef enum InstructionType {
     INSTRUCTION_MRS,
     INSTRUCTION_MSR,
 
+    // Multiply
+    INSTRUCTION_MUL,
+    INSTRUCTION_MLA,
+    INSTRUCTION_MULL,
+    INSTRUCTION_MLAL,
+
     // Single Data Transfer
     INSTRUCTION_LDR,
     INSTRUCTION_STR,
 
+    // Halfword and signed data transfer
+    INSTRUCTION_NOT_IMPLEMENTED, // TODO: check the manual to make the distinction of the instructions
+
     // Block Data Transfer
     INSTRUCTION_LDM,
     INSTRUCTION_STM,
+
+    // Single Data Swap
+    INSTRUCTION_SWP,
+
+    // Software Interrupt
+    INSTRUCTION_SWI,
+
+    // Coprocessor Data Operations
+    INSTRUCTION_CDP,
+
+    // Coprocessor Data Transfers
+    INSTRUCTION_STC,
+    INSTRUCTION_LDC,
+
+    // Coprocessor Register Transfers
+    INSTRUCTION_MCR,
+    INSTRUCTION_MRC,
 } InstructionType;
 
 static void
@@ -289,9 +315,14 @@ typedef struct Instruction {
     u8 U;
     u8 W;
     u8 B;
+    u8 A;
+    u8 H;
     u16 second_operand;
     u8 rd;
     u8 rm;
+    u8 rs;
+    u8 rdhi;
+    u8 rdlo;
     u16 source_operand;
 } Instruction;
 
@@ -521,15 +552,48 @@ decode()
 
     if ((current_instruction & INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
         printf("INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT: 0x%x\n", current_instruction);
+
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_SWI,
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) {
         printf("INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER: 0x%x\n", current_instruction);
+        
+        // TODO: Not handle at the moment. See if this is for multicable support.
+        u8 L = (current_instruction >> 20) & 1;
+        InstructionType type = 0;
+        switch (L) {
+            case 0: INSTRUCTION_MCR; break;
+            case 1: INSTRUCTION_MRC; break;
+        }
+
+        decoded_instruction = (Instruction) {
+            .type = type,
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) {
         printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION: 0x%x\n", current_instruction);
+
+        // TODO: Not handle at the moment. See if this is for multicable support.
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_CDP,
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) {
         printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER: 0x%x\n", current_instruction);
+
+        // TODO: Not handle at the moment. See if this is for multicable support.
+        u8 L = (current_instruction >> 20) & 1;
+        InstructionType type = 0;
+        switch (L) {
+            case 0: INSTRUCTION_STC; break;
+            case 1: INSTRUCTION_LDC; break;
+        }
+
+        decoded_instruction = (Instruction) {
+            .type = type,
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_BRANCH) == INSTRUCTION_FORMAT_BRANCH) {
         printf("INSTRUCTION_FORMAT_BRANCH: 0x%x\n", current_instruction);
@@ -588,9 +652,35 @@ decode()
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) {
         printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET: 0x%x\n", current_instruction);
+
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_NOT_IMPLEMENTED,
+            .offset = ((current_instruction >> 4) & 0xF0) | (current_instruction & 0xF),
+            .H = (current_instruction >> 5) & 1,
+            .S = (current_instruction >> 6) & 1,
+            .rd = (current_instruction >> 12) & 0xF,
+            .rn = (current_instruction >> 16) & 0xF,
+            .L = (current_instruction >> 20) & 1,
+            .W = (current_instruction >> 21) & 1,
+            .U = (current_instruction >> 23) & 1,
+            .P = (current_instruction >> 24) & 1,
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) {
         printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET: 0x%x\n", current_instruction);
+
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_NOT_IMPLEMENTED,
+            .rm = current_instruction & 0xF,
+            .H = (current_instruction >> 5) & 1,
+            .S = (current_instruction >> 6) & 1,
+            .rd = (current_instruction >> 12) & 0xF,
+            .rn = (current_instruction >> 16) & 0xF,
+            .L = (current_instruction >> 20) & 1,
+            .W = (current_instruction >> 21) & 1,
+            .U = (current_instruction >> 23) & 1,
+            .P = (current_instruction >> 24) & 1,
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) == INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) {
         printf("INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE: 0x%x\n", current_instruction);
@@ -602,14 +692,55 @@ decode()
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) == INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) {
         printf("INSTRUCTION_FORMAT_SINGLE_DATA_SWAP: 0x%x\n", current_instruction);
+
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_SWP,
+            .rm = current_instruction & 0xF,
+            .rd = (current_instruction >> 12) & 0xF,
+            .rn = (current_instruction >> 16) & 0xF,
+            .B = (current_instruction >> 22) & 1,
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_MULTIPLY_LONG) == INSTRUCTION_FORMAT_MULTIPLY_LONG) {
         printf("INSTRUCTION_FORMAT_MULTIPLY_LONG: 0x%x\n", current_instruction);
+
+        u8 A = (current_instruction >> 21) & 1;
+        InstructionType type = 0;
+        switch (A) {
+            case 0: type = INSTRUCTION_MULL; break;
+            case 1: type = INSTRUCTION_MLAL; break;
+        }
+
+        decoded_instruction = (Instruction) {
+            .type = type,
+            .rm = current_instruction & 0xF,
+            .rs = (current_instruction >> 8) & 0xF,
+            .rdlo = (current_instruction >> 12) & 0xF,
+            .rdhi = (current_instruction >> 16) & 0xF,
+            .S = (current_instruction >> 20) & 1,
+            .A = A,
+            .U = (current_instruction >> 22) & 1,
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_MULTIPLY) == INSTRUCTION_FORMAT_MULTIPLY) {
         printf("INSTRUCTION_FORMAT_MULTIPLY: 0x%x\n", current_instruction);
         
-        // TODO: continue from here
+        u8 A = (current_instruction >> 21) & 1;
+        InstructionType type = 0;
+        switch (A) {
+            case 0: type = INSTRUCTION_MUL; break;
+            case 1: type = INSTRUCTION_MLA; break;
+        }
+
+        decoded_instruction = (Instruction) {
+            .type = type,
+            .rm = current_instruction & 0xF,
+            .rs = (current_instruction >> 8) & 0xF,
+            .rn = (current_instruction >> 12) & 0xF,
+            .rd = (current_instruction >> 16) & 0xF,
+            .S = (current_instruction >> 20) & 1,
+            .A = A,
+        };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
         printf("INSTRUCTION_FORMAT_DATA_PROCESSING: 0x%x\n", current_instruction);
