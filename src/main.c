@@ -667,7 +667,7 @@ execute()
         
         case INSTRUCTION_LDRH: {
             DEBUG_PRINT("INSTRUCTION_LDRH\n");
-            
+
             int base = cpu.r[decoded_instruction.rn];
             int offset = cpu.r[decoded_instruction.rm];
             
@@ -697,7 +697,33 @@ execute()
         case INSTRUCTION_LDRSB: {
             DEBUG_PRINT("INSTRUCTION_LDRSB\n");
             
+            int base = cpu.r[decoded_instruction.rn];
+            int offset = cpu.r[decoded_instruction.rm];
+            
+            if (decoded_instruction.P) {
+                UPDATE_BASE_OFFSET();
 
+                u8 *memory_region = get_memory_region_at(base);
+                u8 value = *memory_region;
+                u8 sign = (value >> 7) & 1;
+                u32 value_sign_extended = (-sign << 31) | value;
+
+                cpu.r[decoded_instruction.rd] = value_sign_extended;
+
+                if (decoded_instruction.W) {
+                    cpu.r[decoded_instruction.rn] = base;
+                }
+            } else {
+                u8 *memory_region = get_memory_region_at(base);
+                u8 value = *memory_region;
+                u8 sign = (value >> 7) & 1;
+                u32 value_sign_extended = (-sign << 31) | value;
+
+                cpu.r[decoded_instruction.rd] = value_sign_extended;
+
+                UPDATE_BASE_OFFSET();
+                cpu.r[decoded_instruction.rn] = base;
+            }
         } break;
         case INSTRUCTION_LDRSH: {
             DEBUG_PRINT("INSTRUCTION_LDRSH\n");
