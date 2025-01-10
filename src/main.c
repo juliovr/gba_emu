@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <assert.h>
 
 
 #define KILOBYTE (1024)
@@ -18,6 +19,12 @@ typedef int32_t  s32;
 #define false 0
 typedef int bool;
 
+
+#ifdef _DEBUG
+#define DEBUG_PRINT(format, ...) printf(format, __VA_ARGS__)
+#else
+#define DEBUG_PRINT(...)
+#endif
 
 typedef struct CPU {
     union {
@@ -111,6 +118,39 @@ typedef struct GBAMemory {
 } GBAMemory;
 
 GBAMemory memory = {0};
+
+static u8 *
+get_memory_region_at(int at)
+{
+    // General Internal Memory
+    if (at <= 0x00003FFF) return (memory.bios_system_rom + (at - 0x00000000));
+    if (at <= 0x01FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x0203FFFF) return (memory.ewram + (at - 0x02000000));
+    if (at <= 0x02FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x03007FFF) return (memory.iwram + (at - 0x03000000));
+    if (at <= 0x03FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x040003FE) return (memory.io_registers + (at - 0x04000000));
+    if (at <= 0x04FFFFFF) assert(!"Invalid memory");
+
+    // Internal Display Memory
+    if (at <= 0x050003FF) return (memory.bg_obj_palette_ram + (at - 0x05000000));
+    if (at <= 0x05FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x06017FFF) return (memory.vram + (at - 0x06000000));
+    if (at <= 0x06FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x070003FF) return (memory.oam_obj_attributes + (at - 0x07000000));
+    if (at <= 0x07FFFFFF) assert(!"Invalid memory");
+
+    // External Memory (Game Pak)
+    if (at <= 0x09FFFFFF) return (memory.game_pak_rom + (at - 0x08000000));
+    if (at <= 0x0BFFFFFF) assert(!"game_pak not handle");
+    if (at <= 0x0DFFFFFF) assert(!"game_pak not handle");
+    if (at <= 0x0E00FFFF) return (memory.game_pak_ram + (at - 0x0E000000));
+
+
+    assert(!"Invalid memory");
+    return 0;
+}
+
 
 static int
 load_cartridge_into_memory(char *filename)
@@ -243,7 +283,17 @@ typedef enum InstructionType {
     INSTRUCTION_STR,
 
     // Halfword and signed data transfer
-    INSTRUCTION_NOT_IMPLEMENTED, // TODO: check the manual to make the distinction of the instructions
+    
+    // TODO: Used to differentiate the instructions with immediate offset against register offset. Maybe change this later.
+    INSTRUCTION_LDRH_IMM,
+    INSTRUCTION_STRH_IMM,
+    INSTRUCTION_LDRSB_IMM,
+    INSTRUCTION_LDRSH_IMM,
+    
+    INSTRUCTION_LDRH,
+    INSTRUCTION_STRH,
+    INSTRUCTION_LDRSB,
+    INSTRUCTION_LDRSH,
 
     // Block Data Transfer
     INSTRUCTION_LDM,
@@ -432,13 +482,14 @@ execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) return;
     if (!should_execute_instruction(decoded_instruction.condition)) {
-        printf("Condition %d...Skipped\n", decoded_instruction.condition);
+        // printf("Condition %d...Skipped\n", decoded_instruction.condition);
         return;
     }
 
     switch (decoded_instruction.type) {
         // Branch
         case INSTRUCTION_B: {
+            DEBUG_PRINT("INSTRUCTION_B\n");
             if (decoded_instruction.L) {
                 cpu.lr = cpu.pc - 1;
             }
@@ -449,63 +500,77 @@ execute()
 
         // Data processing
         case INSTRUCTION_ADD: {
+            DEBUG_PRINT("INSTRUCTION_ADD\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_AND: {
+            DEBUG_PRINT("INSTRUCTION_AND\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_EOR: {
+            DEBUG_PRINT("INSTRUCTION_EOR\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] ^ get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_SUB: {
+            DEBUG_PRINT("INSTRUCTION_SUB\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_RSB: {
+            DEBUG_PRINT("INSTRUCTION_RSB\n");
             DATA_PROCESSING(get_second_operand(&carry) - cpu.r[decoded_instruction.rn]);
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_ADC: {
+            DEBUG_PRINT("INSTRUCTION_ADC\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry) + carry);
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_SBC: {
+            DEBUG_PRINT("INSTRUCTION_SBC\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry) + carry - 1);
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_RSC: {
+            DEBUG_PRINT("INSTRUCTION_RSC\n");
             DATA_PROCESSING(get_second_operand(&carry) - cpu.r[decoded_instruction.rn] + carry - 1);
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_TST: {
+            DEBUG_PRINT("INSTRUCTION_TST\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
         } break;
         case INSTRUCTION_TEQ: {
+            DEBUG_PRINT("INSTRUCTION_TEQ\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] ^ get_second_operand(&carry));
         } break;
         case INSTRUCTION_CMP: {
+            DEBUG_PRINT("INSTRUCTION_CMP\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry));
         } break;
         case INSTRUCTION_CMN: {
+            DEBUG_PRINT("INSTRUCTION_CMN\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry));
         } break;
         case INSTRUCTION_ORR: {
+            DEBUG_PRINT("INSTRUCTION_ORR\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] | get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_MOV: {
+            DEBUG_PRINT("INSTRUCTION_MOV\n");
             DATA_PROCESSING(get_second_operand(&carry));
             // u8 carry = 0;                                                   
             // /*u32 second_operand = get_second_operand(&carry);*/                
@@ -520,24 +585,176 @@ execute()
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_BIC: {
+            DEBUG_PRINT("INSTRUCTION_BIC\n");
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] & !get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_MVN: {
+            DEBUG_PRINT("INSTRUCTION_MVN\n");
             DATA_PROCESSING(!get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
 
+        // PSR Transfer
+        case INSTRUCTION_MRS: {
+            DEBUG_PRINT("INSTRUCTION_MRS\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_MSR: {
+            DEBUG_PRINT("INSTRUCTION_MSR\n");
+            int x = 5;
+        } break;
+
+        // Multiply
+        case INSTRUCTION_MUL: {
+            DEBUG_PRINT("INSTRUCTION_MUL\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_MLA: {
+            DEBUG_PRINT("INSTRUCTION_MLA\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_MULL: {
+            DEBUG_PRINT("INSTRUCTION_MULL\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_MLAL: {
+            DEBUG_PRINT("INSTRUCTION_MLAL\n");
+            int x = 5;
+        } break;
+
+        // Single Data Transfer
+        case INSTRUCTION_LDR: {
+            DEBUG_PRINT("INSTRUCTION_LDR\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_STR: {
+            DEBUG_PRINT("INSTRUCTION_STR\n");
+            int x = 5;
+        } break;
+
+
+
+        // Halfword and signed data transfer
+#define UPDATE_BASE_OFFSET()            \
+    do {                                \
+        if (decoded_instruction.U) {    \
+            base += offset;             \
+        } else {                        \
+            base -= offset;             \
+        }                               \
+    } while (0)
+
+
+        case INSTRUCTION_LDRH_IMM: {
+            DEBUG_PRINT("INSTRUCTION_LDRH_IMM\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_STRH_IMM: {
+            DEBUG_PRINT("INSTRUCTION_STRH_IMM\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_LDRSB_IMM: {
+            DEBUG_PRINT("INSTRUCTION_LDRSB_IMM\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_LDRSH_IMM: {
+            DEBUG_PRINT("INSTRUCTION_LDRSH_IMM\n");
+            int x = 5;
+        } break;
+        
+        case INSTRUCTION_LDRH: {
+            DEBUG_PRINT("INSTRUCTION_LDRH\n");
+            
+            int base = cpu.r[decoded_instruction.rn];
+            int offset = cpu.r[decoded_instruction.rm];
+            
+            if (decoded_instruction.P) {
+                UPDATE_BASE_OFFSET();
+
+                u8 *memory_region = get_memory_region_at(base);
+                cpu.r[decoded_instruction.rd] = *((u16 *)memory_region);
+
+                if (decoded_instruction.W) {
+                    cpu.r[decoded_instruction.rn] = base;
+                }
+            } else {
+                u8 *memory_region = get_memory_region_at(base);
+                cpu.r[decoded_instruction.rd] = *((u16 *)memory_region);
+
+                UPDATE_BASE_OFFSET();
+                cpu.r[decoded_instruction.rn] = base;
+            }
+
+
+        } break;
+        case INSTRUCTION_STRH: {
+            DEBUG_PRINT("INSTRUCTION_STRH\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_LDRSB: {
+            DEBUG_PRINT("INSTRUCTION_LDRSB\n");
+            
+
+        } break;
+        case INSTRUCTION_LDRSH: {
+            DEBUG_PRINT("INSTRUCTION_LDRSH\n");
+            int x = 5;
+        } break;
+
+#undef UPDATE_BASE_OFFSET
+
+
 
         // Block Data Transfer
         case INSTRUCTION_LDM: {
+            DEBUG_PRINT("INSTRUCTION_LDM\n");
             u32 address = cpu.r[decoded_instruction.rn];
         } break;
 
         case INSTRUCTION_STM: {
+            DEBUG_PRINT("INSTRUCTION_STM\n");
             u32 address = cpu.r[decoded_instruction.rn];
+        } break;
+
+        // Single Data Swap
+        case INSTRUCTION_SWP: {
+            DEBUG_PRINT("INSTRUCTION_SWP\n");
+            int x = 5;
+        } break;
+
+        // Software Interrupt
+        case INSTRUCTION_SWI: {
+            DEBUG_PRINT("INSTRUCTION_SWI\n");
+            int x = 5;
+        } break;
+
+        // Coprocessor Data Operations
+        case INSTRUCTION_CDP: {
+            DEBUG_PRINT("INSTRUCTION_CDP\n");
+            int x = 5;
+        } break;
+
+        // Coprocessor Data Transfers
+        case INSTRUCTION_STC: {
+            DEBUG_PRINT("INSTRUCTION_STC\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_LDC: {
+            DEBUG_PRINT("INSTRUCTION_LDC\n");
+            int x = 5;
+        } break;
+
+        // Coprocessor Register Transfers
+        case INSTRUCTION_MCR: {
+            DEBUG_PRINT("INSTRUCTION_MCR\n");
+            int x = 5;
+        } break;
+        case INSTRUCTION_MRC: {
+            DEBUG_PRINT("INSTRUCTION_MRC\n");
+            int x = 5;
         } break;
     }
 
@@ -551,14 +768,14 @@ decode()
     if (current_instruction == 0) return;
 
     if ((current_instruction & INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
-        printf("INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT: 0x%x\n", current_instruction);
 
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_SWI,
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) {
-        printf("INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER: 0x%x\n", current_instruction);
         
         // TODO: Not handle at the moment. See if this is for multicable support.
         u8 L = (current_instruction >> 20) & 1;
@@ -573,7 +790,7 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) {
-        printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION: 0x%x\n", current_instruction);
 
         // TODO: Not handle at the moment. See if this is for multicable support.
         decoded_instruction = (Instruction) {
@@ -581,7 +798,7 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) {
-        printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER: 0x%x\n", current_instruction);
 
         // TODO: Not handle at the moment. See if this is for multicable support.
         u8 L = (current_instruction >> 20) & 1;
@@ -596,7 +813,7 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_BRANCH) == INSTRUCTION_FORMAT_BRANCH) {
-        printf("INSTRUCTION_FORMAT_BRANCH: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_BRANCH: 0x%x\n", current_instruction);
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_B,
             .offset = current_instruction & 0xFFFFFF,
@@ -604,7 +821,7 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) == INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) {
-        printf("INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER: 0x%x\n", current_instruction);
 
         int opcode = (current_instruction >> 20) & 1;
         InstructionType type = 0;
@@ -628,7 +845,7 @@ decode()
     //     printf("INSTRUCTION_FORMAT_UNDEFINED: 0x%x\n", current_instruction);
     // }
     else if ((current_instruction & INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) == INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) {
-        printf("INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER: 0x%x\n", current_instruction);
 
         int opcode = (current_instruction >> 20) & 1;
         InstructionType type = 0;
@@ -651,39 +868,79 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) {
-        printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET: 0x%x\n", current_instruction);
+
+        u8 H = (current_instruction >> 5) & 1;
+        u8 S = (current_instruction >> 6) & 1;
+
+        if (S == 0 && H == 0) goto SWP;
+
+        u8 L = (current_instruction >> 20) & 1;
+        InstructionType type = 0;
+        if (S == 0 && H == 1) {
+            if (L) {
+                // load
+                type = INSTRUCTION_LDRH_IMM;
+            } else {
+                type = INSTRUCTION_STRH_IMM;
+            }
+        } else if (S == 1 && H == 0) {
+            type = INSTRUCTION_LDRSB_IMM;
+        } else {
+            type = INSTRUCTION_LDRSH_IMM;
+        }
 
         decoded_instruction = (Instruction) {
-            .type = INSTRUCTION_NOT_IMPLEMENTED,
+            .type = type,
             .offset = ((current_instruction >> 4) & 0xF0) | (current_instruction & 0xF),
-            .H = (current_instruction >> 5) & 1,
-            .S = (current_instruction >> 6) & 1,
+            .H = H,
+            .S = S,
             .rd = (current_instruction >> 12) & 0xF,
             .rn = (current_instruction >> 16) & 0xF,
-            .L = (current_instruction >> 20) & 1,
+            .L = L,
             .W = (current_instruction >> 21) & 1,
             .U = (current_instruction >> 23) & 1,
             .P = (current_instruction >> 24) & 1,
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) {
-        printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET: 0x%x\n", current_instruction);
+
+        u8 H = (current_instruction >> 5) & 1;
+        u8 S = (current_instruction >> 6) & 1;
+
+        if (S == 0 && H == 0) goto SWP;
+
+        u8 L = (current_instruction >> 20) & 1;
+        InstructionType type = 0;
+        if (S == 0 && H == 1) {
+            if (L) {
+                // load
+                type = INSTRUCTION_LDRH;
+            } else {
+                type = INSTRUCTION_STRH;
+            }
+        } else if (S == 1 && H == 0) {
+            type = INSTRUCTION_LDRSB;
+        } else {
+            type = INSTRUCTION_LDRSH;
+        }
 
         decoded_instruction = (Instruction) {
-            .type = INSTRUCTION_NOT_IMPLEMENTED,
+            .type = type,
             .rm = current_instruction & 0xF,
-            .H = (current_instruction >> 5) & 1,
-            .S = (current_instruction >> 6) & 1,
+            .H = H,
+            .S = S,
             .rd = (current_instruction >> 12) & 0xF,
             .rn = (current_instruction >> 16) & 0xF,
-            .L = (current_instruction >> 20) & 1,
+            .L = L,
             .W = (current_instruction >> 21) & 1,
             .U = (current_instruction >> 23) & 1,
             .P = (current_instruction >> 24) & 1,
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) == INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) {
-        printf("INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE: 0x%x\n", current_instruction);
 
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_BX,
@@ -691,7 +948,8 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) == INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) {
-        printf("INSTRUCTION_FORMAT_SINGLE_DATA_SWAP: 0x%x\n", current_instruction);
+SWP:
+        // printf("INSTRUCTION_FORMAT_SINGLE_DATA_SWAP: 0x%x\n", current_instruction);
 
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_SWP,
@@ -702,7 +960,7 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_MULTIPLY_LONG) == INSTRUCTION_FORMAT_MULTIPLY_LONG) {
-        printf("INSTRUCTION_FORMAT_MULTIPLY_LONG: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_MULTIPLY_LONG: 0x%x\n", current_instruction);
 
         u8 A = (current_instruction >> 21) & 1;
         InstructionType type = 0;
@@ -723,7 +981,7 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_MULTIPLY) == INSTRUCTION_FORMAT_MULTIPLY) {
-        printf("INSTRUCTION_FORMAT_MULTIPLY: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_MULTIPLY: 0x%x\n", current_instruction);
         
         u8 A = (current_instruction >> 21) & 1;
         InstructionType type = 0;
@@ -743,7 +1001,7 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
-        printf("INSTRUCTION_FORMAT_DATA_PROCESSING: 0x%x\n", current_instruction);
+        // printf("INSTRUCTION_FORMAT_DATA_PROCESSING: 0x%x\n", current_instruction);
         
         int opcode = (current_instruction >> 21) & 0b1111;
         InstructionType type = 0;
