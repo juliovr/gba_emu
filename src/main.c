@@ -480,10 +480,10 @@ get_second_operand(u8 *carry)
 static void
 execute()
 {
-    if (decoded_instruction.type == INSTRUCTION_NONE) return;
+    if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
     if (!should_execute_instruction(decoded_instruction.condition)) {
         // printf("Condition %d...Skipped\n", decoded_instruction.condition);
-        return;
+        goto exit_execute;
     }
 
     switch (decoded_instruction.type) {
@@ -784,6 +784,7 @@ execute()
         } break;
     }
 
+exit_execute:
     decoded_instruction = (Instruction){0};
 }
 
@@ -938,6 +939,9 @@ decode()
         if (S == 0 && H == 0) goto SWP;
 
         u8 L = (current_instruction >> 20) & 1;
+
+        // if (L == 0 && S == 1) assert(!"Bad flags");
+
         InstructionType type = 0;
         if (S == 0 && H == 1) {
             if (L) {
@@ -1051,6 +1055,16 @@ SWP:
         }
 
         u8 S = (current_instruction >> 20) & 1;
+        decoded_instruction = (Instruction) {
+            .type = type,
+            .S = S, // Set condition codes
+            .I = (current_instruction >> 25) & 1, // Immediate operand
+            .rn = (current_instruction >> 16) & 0xF, // Source register
+            .rd = (current_instruction >> 12) & 0xF, // Destination register
+            // TODO: check the docs when writing into R15 (PC) register.
+            .second_operand = current_instruction & ((1 << 12) - 1),
+        };
+
         if (S == 0 && (type == INSTRUCTION_TST ||
                        type == INSTRUCTION_TEQ ||
                        type == INSTRUCTION_CMP ||
@@ -1079,20 +1093,14 @@ SWP:
                         .source_operand = current_instruction & 0xFFF,
                     };
                 } break;
+                default: {
+                    // If does not meet the requirements to be the previous instructions, just keep the original one and set the S flag.
+                    // NOTE: An assembler should always set the S flag for these instructions even if this is not specified in the mnemonic.
+                    decoded_instruction.S = 1;
+                }
             }
         }
-        else
-        {
-            decoded_instruction = (Instruction) {
-                .type = type,
-                .S = S, // Set condition codes
-                .I = (current_instruction >> 25) & 1, // Immediate operand
-                .rn = (current_instruction >> 16) & 0xF, // Source register
-                .rd = (current_instruction >> 12) & 0xF, // Destination register
-                // TODO: check the docs when writing into R15 (PC) register.
-                .second_operand = current_instruction & ((1 << 12) - 1),
-            };
-        }
+
 
     } else {
         fprintf(stderr, "Instruction unknown: 0x%x\n", current_instruction);
