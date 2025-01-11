@@ -490,6 +490,7 @@ execute()
         // Branch
         case INSTRUCTION_B: {
             DEBUG_PRINT("INSTRUCTION_B\n");
+
             if (decoded_instruction.L) {
                 cpu.lr = cpu.pc - 1;
             }
@@ -501,48 +502,56 @@ execute()
         // Data processing
         case INSTRUCTION_ADD: {
             DEBUG_PRINT("INSTRUCTION_ADD\n");
+
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_AND: {
             DEBUG_PRINT("INSTRUCTION_AND\n");
+
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_EOR: {
             DEBUG_PRINT("INSTRUCTION_EOR\n");
+            
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] ^ get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_SUB: {
             DEBUG_PRINT("INSTRUCTION_SUB\n");
+            
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_RSB: {
             DEBUG_PRINT("INSTRUCTION_RSB\n");
+
             DATA_PROCESSING(get_second_operand(&carry) - cpu.r[decoded_instruction.rn]);
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_ADC: {
             DEBUG_PRINT("INSTRUCTION_ADC\n");
+
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry) + carry);
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_SBC: {
             DEBUG_PRINT("INSTRUCTION_SBC\n");
+
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry) + carry - 1);
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_RSC: {
             DEBUG_PRINT("INSTRUCTION_RSC\n");
+
             DATA_PROCESSING(get_second_operand(&carry) - cpu.r[decoded_instruction.rn] + carry - 1);
             
             cpu.r[decoded_instruction.rd] = result;
@@ -565,33 +574,28 @@ execute()
         } break;
         case INSTRUCTION_ORR: {
             DEBUG_PRINT("INSTRUCTION_ORR\n");
+
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] | get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_MOV: {
             DEBUG_PRINT("INSTRUCTION_MOV\n");
+
             DATA_PROCESSING(get_second_operand(&carry));
-            // u8 carry = 0;                                                   
-            // /*u32 second_operand = get_second_operand(&carry);*/                
-            // u32 result = (get_second_operand(&carry));                                      
-                                                                            
-            // if (decoded_instruction.S && decoded_instruction.rd != 15) {    
-            //     SET_CONDITION_C(carry);                                     
-            //     SET_CONDITION_Z(result == 0);                               
-            //     SET_CONDITION_N(result >> 31);                              
-            // }
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_BIC: {
             DEBUG_PRINT("INSTRUCTION_BIC\n");
+
             DATA_PROCESSING(cpu.r[decoded_instruction.rn] & !get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
         case INSTRUCTION_MVN: {
             DEBUG_PRINT("INSTRUCTION_MVN\n");
+
             DATA_PROCESSING(!get_second_operand(&carry));
             
             cpu.r[decoded_instruction.rd] = result;
@@ -600,39 +604,47 @@ execute()
         // PSR Transfer
         case INSTRUCTION_MRS: {
             DEBUG_PRINT("INSTRUCTION_MRS\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_MSR: {
             DEBUG_PRINT("INSTRUCTION_MSR\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
 
         // Multiply
         case INSTRUCTION_MUL: {
             DEBUG_PRINT("INSTRUCTION_MUL\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_MLA: {
             DEBUG_PRINT("INSTRUCTION_MLA\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_MULL: {
             DEBUG_PRINT("INSTRUCTION_MULL\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_MLAL: {
             DEBUG_PRINT("INSTRUCTION_MLAL\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
 
         // Single Data Transfer
         case INSTRUCTION_LDR: {
             DEBUG_PRINT("INSTRUCTION_LDR\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_STR: {
             DEBUG_PRINT("INSTRUCTION_STR\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
 
 
@@ -650,19 +662,23 @@ execute()
 
         case INSTRUCTION_LDRH_IMM: {
             DEBUG_PRINT("INSTRUCTION_LDRH_IMM\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_STRH_IMM: {
             DEBUG_PRINT("INSTRUCTION_STRH_IMM\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_LDRSB_IMM: {
             DEBUG_PRINT("INSTRUCTION_LDRSB_IMM\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_LDRSH_IMM: {
             DEBUG_PRINT("INSTRUCTION_LDRSH_IMM\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         
         case INSTRUCTION_LDRH: {
@@ -692,7 +708,8 @@ execute()
         } break;
         case INSTRUCTION_STRH: {
             DEBUG_PRINT("INSTRUCTION_STRH\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_LDRSB: {
             DEBUG_PRINT("INSTRUCTION_LDRSB\n");
@@ -727,7 +744,8 @@ execute()
         } break;
         case INSTRUCTION_LDRSH: {
             DEBUG_PRINT("INSTRUCTION_LDRSH\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
 
 #undef UPDATE_BASE_OFFSET
@@ -737,50 +755,63 @@ execute()
         // Block Data Transfer
         case INSTRUCTION_LDM: {
             DEBUG_PRINT("INSTRUCTION_LDM\n");
+            
             u32 address = cpu.r[decoded_instruction.rn];
+            
+            assert(!"Implement");
         } break;
 
         case INSTRUCTION_STM: {
             DEBUG_PRINT("INSTRUCTION_STM\n");
+            
             u32 address = cpu.r[decoded_instruction.rn];
+            
+            assert(!"Implement");
         } break;
 
         // Single Data Swap
         case INSTRUCTION_SWP: {
             DEBUG_PRINT("INSTRUCTION_SWP\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
 
         // Software Interrupt
         case INSTRUCTION_SWI: {
             DEBUG_PRINT("INSTRUCTION_SWI\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
 
         // Coprocessor Data Operations
         case INSTRUCTION_CDP: {
             DEBUG_PRINT("INSTRUCTION_CDP\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
 
         // Coprocessor Data Transfers
         case INSTRUCTION_STC: {
             DEBUG_PRINT("INSTRUCTION_STC\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_LDC: {
             DEBUG_PRINT("INSTRUCTION_LDC\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
 
         // Coprocessor Register Transfers
         case INSTRUCTION_MCR: {
             DEBUG_PRINT("INSTRUCTION_MCR\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
         case INSTRUCTION_MRC: {
             DEBUG_PRINT("INSTRUCTION_MRC\n");
-            int x = 5;
+            
+            assert(!"Implement");
         } break;
     }
 
