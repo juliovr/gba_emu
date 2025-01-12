@@ -142,8 +142,8 @@ get_memory_region_at(int at)
 
     // External Memory (Game Pak)
     if (at <= 0x09FFFFFF) return (memory.game_pak_rom + (at - 0x08000000));
-    if (at <= 0x0BFFFFFF) assert(!"game_pak not handle");
-    if (at <= 0x0DFFFFFF) assert(!"game_pak not handle");
+    if (at <= 0x0BFFFFFF) assert(!"game_pak Wait State 1 not handled");
+    if (at <= 0x0DFFFFFF) assert(!"game_pak Wait State 2 not handled");
     if (at <= 0x0E00FFFF) return (memory.game_pak_ram + (at - 0x0E000000));
 
 
@@ -367,7 +367,10 @@ typedef struct Instruction {
     u8 B;
     u8 A;
     u8 H;
-    u16 second_operand;
+    union {
+        u16 second_operand;
+        u16 register_list;
+    };
     u8 rd;
     u8 rm;
     u8 rs;
@@ -756,17 +759,123 @@ execute()
         case INSTRUCTION_LDM: {
             DEBUG_PRINT("INSTRUCTION_LDM\n");
             
-            u32 address = cpu.r[decoded_instruction.rn];
-            
-            assert(!"Implement");
+            u32 base_address = cpu.r[decoded_instruction.rn];
+            u16 register_list = decoded_instruction.register_list;
+            if (decoded_instruction.U) {
+                // Increment
+
+                while (register_list) {
+                    u8 register_number = register_list & 1;
+                    if (register_number) {
+                        if (decoded_instruction.P) {
+                            // Pre-increment
+
+                            base_address++;
+                            
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            cpu.r[register_number] = *address;
+                        } else {
+                            // Post-increment
+
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            cpu.r[register_number] = *address;
+                            
+                            base_address++;
+                        }
+                    }
+
+                    register_list >>= 1;
+                }
+            } else {
+                // Decrement
+                while (register_list) {
+                    u8 register_number = (register_list >> 15) & 1; // Always test the msb
+                    if (register_number) {
+                        if (decoded_instruction.P) {
+                            // Pre-decrement
+
+                            base_address--;
+                            
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            cpu.r[register_number] = *address;
+                        } else {
+                            // Post-decrement
+
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            cpu.r[register_number] = *address;
+                            
+                            base_address--;
+                        }
+                    }
+
+                    register_list <<= 1;
+                }
+            }
+
+            if (decoded_instruction.W) {
+                cpu.r[decoded_instruction.rn] = base_address;
+            }
         } break;
 
         case INSTRUCTION_STM: {
             DEBUG_PRINT("INSTRUCTION_STM\n");
             
-            u32 address = cpu.r[decoded_instruction.rn];
-            
-            assert(!"Implement");
+            u32 base_address = cpu.r[decoded_instruction.rn];
+            u16 register_list = decoded_instruction.register_list;
+            if (decoded_instruction.U) {
+                // Increment
+
+                while (register_list) {
+                    u8 register_number = register_list & 1;
+                    if (register_number) {
+                        if (decoded_instruction.P) {
+                            // Pre-increment
+
+                            base_address++;
+                            
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            *address = cpu.r[register_number];
+                        } else {
+                            // Post-increment
+
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            *address = cpu.r[register_number];
+                            
+                            base_address++;
+                        }
+                    }
+
+                    register_list >>= 1;
+                }
+            } else {
+                // Decrement
+                while (register_list) {
+                    u8 register_number = (register_list >> 15) & 1; // Always test the msb
+                    if (register_number) {
+                        if (decoded_instruction.P) {
+                            // Pre-decrement
+
+                            base_address--;
+                            
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            *address = cpu.r[register_number];
+                        } else {
+                            // Post-decrement
+
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            *address = cpu.r[register_number];
+                            
+                            base_address--;
+                        }
+                    }
+
+                    register_list <<= 1;
+                }
+            }
+
+            if (decoded_instruction.W) {
+                cpu.r[decoded_instruction.rn] = base_address;
+            }
         } break;
 
         // Single Data Swap
@@ -896,8 +1005,17 @@ decode()
             .W = (current_instruction >> 21) & 1,
             .L = (current_instruction >> 20) & 1,
             .rn = (current_instruction >> 16) & 0xF,
-            .second_operand = current_instruction & 0xFFFF,
+            .register_list = current_instruction & 0xFFFF,
         };
+
+        // NOTE: R15 should not be used as the base register in any LDM or STM instruction.
+        assert(decoded_instruction.rn != 15);
+
+        // NOTE: Any subset of the registers, or all the registers, may be specified. The only restriction is that the register list should not be empty.
+        assert(decoded_instruction.register_list > 0);
+
+        // NOTE: S set means it is executed in privilege mode.
+        assert(decoded_instruction.S == 0);
     }
     // else if ((current_instruction &INSTRUCTION_FORMAT_UNDEFINED) == INSTRUCTION_FORMAT_UNDEFINED) {
     //     printf("INSTRUCTION_FORMAT_UNDEFINED: 0x%x\n", current_instruction);
@@ -1139,7 +1257,7 @@ SWP:
     }
 
 
-    decoded_instruction.condition = (current_instruction >> 28) & 0xF;;
+    decoded_instruction.condition = (current_instruction >> 28) & 0xF;
 
     current_instruction = 0;
 }
@@ -1205,7 +1323,7 @@ process_instructions()
 
 int main()
 {
-    char *filename = "../Donkey Kong Country 2.gba";
+    char *filename = "Donkey Kong Country 2.gba";
     int error = load_cartridge_into_memory(filename);
     if (error) {
         exit(1);
