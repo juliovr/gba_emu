@@ -756,60 +756,37 @@ execute()
 
 
         // Block Data Transfer
+#define INCREMENT_DECREMENT_BASE_ADDRESS()  \
+    do {                                    \
+        if (decoded_instruction.U) {        \
+            base_address++;                 \
+        } else {                            \
+            base_address--;                 \
+        }                                   \
+    } while (0)
+
         case INSTRUCTION_LDM: {
             DEBUG_PRINT("INSTRUCTION_LDM\n");
             
             u32 base_address = cpu.r[decoded_instruction.rn];
             u16 register_list = decoded_instruction.register_list;
-            if (decoded_instruction.U) {
-                // Increment
-
-                while (register_list) {
-                    u8 register_number = register_list & 1;
-                    if (register_number) {
-                        if (decoded_instruction.P) {
-                            // Pre-increment
-
-                            base_address++;
-                            
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
-                            cpu.r[register_number] = *address;
-                        } else {
-                            // Post-increment
-
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
-                            cpu.r[register_number] = *address;
-                            
-                            base_address++;
-                        }
+            while (register_list) {
+                u8 register_number = register_list & 1;
+                if (register_number) {
+                    if (decoded_instruction.P) {
+                        INCREMENT_DECREMENT_BASE_ADDRESS();
+                        
+                        u32 *address = (u32 *)get_memory_region_at(base_address);
+                        cpu.r[register_number] = *address;
+                    } else {
+                        u32 *address = (u32 *)get_memory_region_at(base_address);
+                        cpu.r[register_number] = *address;
+                        
+                        INCREMENT_DECREMENT_BASE_ADDRESS();
                     }
-
-                    register_list >>= 1;
                 }
-            } else {
-                // Decrement
-                while (register_list) {
-                    u8 register_number = (register_list >> 15) & 1; // Always test the msb
-                    if (register_number) {
-                        if (decoded_instruction.P) {
-                            // Pre-decrement
 
-                            base_address--;
-                            
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
-                            cpu.r[register_number] = *address;
-                        } else {
-                            // Post-decrement
-
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
-                            cpu.r[register_number] = *address;
-                            
-                            base_address--;
-                        }
-                    }
-
-                    register_list <<= 1;
-                }
+                register_list >>= 1;
             }
 
             if (decoded_instruction.W) {
@@ -822,61 +799,32 @@ execute()
             
             u32 base_address = cpu.r[decoded_instruction.rn];
             u16 register_list = decoded_instruction.register_list;
-            if (decoded_instruction.U) {
-                // Increment
-
-                while (register_list) {
-                    u8 register_number = register_list & 1;
-                    if (register_number) {
-                        if (decoded_instruction.P) {
-                            // Pre-increment
-
-                            base_address++;
-                            
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
-                            *address = cpu.r[register_number];
-                        } else {
-                            // Post-increment
-
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
-                            *address = cpu.r[register_number];
-                            
-                            base_address++;
-                        }
+            while (register_list) {
+                u8 register_number = register_list & 1;
+                if (register_number) {
+                    if (decoded_instruction.P) {
+                        INCREMENT_DECREMENT_BASE_ADDRESS();
+                        
+                        u32 *address = (u32 *)get_memory_region_at(base_address);
+                        *address = cpu.r[register_number];
+                    } else {
+                        u32 *address = (u32 *)get_memory_region_at(base_address);
+                        *address = cpu.r[register_number];
+                        
+                        INCREMENT_DECREMENT_BASE_ADDRESS();
                     }
-
-                    register_list >>= 1;
                 }
-            } else {
-                // Decrement
-                while (register_list) {
-                    u8 register_number = (register_list >> 15) & 1; // Always test the msb
-                    if (register_number) {
-                        if (decoded_instruction.P) {
-                            // Pre-decrement
 
-                            base_address--;
-                            
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
-                            *address = cpu.r[register_number];
-                        } else {
-                            // Post-decrement
-
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
-                            *address = cpu.r[register_number];
-                            
-                            base_address--;
-                        }
-                    }
-
-                    register_list <<= 1;
-                }
+                register_list >>= 1;
             }
 
             if (decoded_instruction.W) {
                 cpu.r[decoded_instruction.rn] = base_address;
             }
         } break;
+
+#undef INCREMENT_DECREMENT_BASE_ADDRESS
+
 
         // Single Data Swap
         case INSTRUCTION_SWP: {
