@@ -17,3 +17,4 @@ Execute     Register(s) read from register bank
 - [ARM7TDMI Reference Manual](https://ww1.microchip.com/downloads/en/DeviceDoc/DDI0029G_7TDMI_R3_trm.pdf)
 - [ARM Architecture Reference Manual](https://www.intel.com/programmable/technical-pdfs/654202.pdf)
 - [ARM7TDMI Data Sheet](https://www.dwedit.org/files/ARM7TDMI.pdf)
+- [GBA Architecture](https://www.copetti.org/writings/consoles/game-boy-advance/)

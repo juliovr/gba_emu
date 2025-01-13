@@ -61,7 +61,34 @@ typedef struct CPU {
 
 CPU cpu = {0};
 
-int pc_incremented = 0;
+static void
+num_to_binary_32(char *buffer, u32 num)
+{
+    int i = 0;
+    while (i < 32) {
+        buffer[i++] = '0' + ((num >> 31) & 1);
+        num <<= 1;
+    }
+    buffer[i] = '\0';
+}
+
+static void
+print_cpu_state()
+{
+    printf("Registers:\n");
+    for (int i = 0; i < 16; i++) {
+        printf("    r[%d] = %d\n", i, cpu.r[i]);
+    }
+    printf("----------------\n");
+    printf("PC = %d\n", cpu.pc);
+
+    char cpsr_buffer[33];
+    num_to_binary_32(cpsr_buffer, cpu.cpsr);
+    printf(cpsr_buffer);
+    printf("\n");
+    
+    printf("----------------\n");
+}
 
 //
 // Control Bits
@@ -79,10 +106,35 @@ int pc_incremented = 0;
 #define CONDITION_Z             ((cpu.cpsr >> 30) & 1)     /* Zero */
 #define CONDITION_N             ((cpu.cpsr >> 31) & 1)     /* Negative or less than */
 
-#define SET_CONDITION_V(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 28)) | ((bit) & 1) << 28))
-#define SET_CONDITION_C(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | ((bit) & 1) << 29))
-#define SET_CONDITION_Z(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 30)) | ((bit) & 1) << 30))
-#define SET_CONDITION_N(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 31)) | ((bit) & 1) << 31))
+// #define SET_CONDITION_V(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 28)) | ((bit) & 1) << 28))
+// #define SET_CONDITION_C(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | ((bit) & 1) << 29))
+// #define SET_CONDITION_Z(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 30)) | ((bit) & 1) << 30))
+// #define SET_CONDITION_N(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 31)) | ((bit) & 1) << 31))
+
+
+static void
+SET_CONDITION_V(u8 bit)
+{
+    cpu.cpsr = ((cpu.cpsr & ~(1 << 28)) | ((bit) & 1) << 28);
+}
+
+static void
+SET_CONDITION_C(u8 bit)
+{
+    cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | ((bit) & 1) << 29);
+}
+
+static void
+SET_CONDITION_Z(u8 bit)
+{
+    cpu.cpsr = ((cpu.cpsr & ~(1 << 30)) | ((bit) & 1) << 30);
+}
+
+static void
+SET_CONDITION_N(u8 bit)
+{
+    cpu.cpsr = ((cpu.cpsr & ~(1 << 31)) | ((bit) & 1) << 31);
+}
 
 
 // TODO: is it necessary to make fields for the "Not used" data to make the load simpler?
@@ -208,7 +260,7 @@ typedef struct CartridgeHeader {
 #define INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE                          (0b0001001011111111111100010000)
 #define INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET       (0b0000000000000000000010010000)
 #define INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET      (0b0000010000000000000010010000)
-#define INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER                         (0b11 << 25)
+#define INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER                         (1 << 26)
 #define INSTRUCTION_FORMAT_UNDEFINED                                    ((0b11 << 25) | (1 << 4))
 #define INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER                          (1 << 27)
 #define INSTRUCTION_FORMAT_BRANCH                                       (0b101 << 25)
@@ -318,36 +370,53 @@ typedef enum InstructionType {
 } InstructionType;
 
 static void
-decode_debug()
+get_instruction_type_name(InstructionType type, char *buffer)
 {
-    u32 *instructions = (u32 *)memory.game_pak_rom;
-    cpu.pc = 0;
-    
-    // TODO: Wrap in a while loop
-    while (1) {
-        u32 instruction = instructions[cpu.pc++]; // TODO: should this be u16 or u32?
-        // cpu.pc++; // Because of pipelining should increment twice, but how do I execute this "skipped" instruction?
-        
-        if ((instruction & INSTRUCTION_FORMAT_BRANCH) == INSTRUCTION_FORMAT_BRANCH) {
-            int L = instruction & (1 << 24);
-            if (L) {
-                // TODO: implement logic
-                printf("BL\n");
-            }
-
-            int offset = instruction & 0xFFFFFF;
-            printf("Instruction Branch: offset = %d\n", offset);
-
-            cpu.pc++;
-            cpu.pc += offset;
-        } else if ((instruction & INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
-            printf("Data processing: 0x%x\n", instruction);
-        } else {
-            fprintf(stderr, "Instruction unimplemented: 0x%x\n", instruction);
-            return;
-        }
-
-        int x = 5;
+    switch (type) {
+        case INSTRUCTION_NONE: strcpy(buffer, "INSTRUCTION_NONE"); break;
+        case INSTRUCTION_B: strcpy(buffer, "INSTRUCTION_B"); break;
+        case INSTRUCTION_BX: strcpy(buffer, "INSTRUCTION_BX"); break;
+        case INSTRUCTION_AND: strcpy(buffer, "INSTRUCTION_AND"); break;
+        case INSTRUCTION_EOR: strcpy(buffer, "INSTRUCTION_EOR"); break;
+        case INSTRUCTION_SUB: strcpy(buffer, "INSTRUCTION_SUB"); break;
+        case INSTRUCTION_RSB: strcpy(buffer, "INSTRUCTION_RSB"); break;
+        case INSTRUCTION_ADD: strcpy(buffer, "INSTRUCTION_ADD"); break;
+        case INSTRUCTION_ADC: strcpy(buffer, "INSTRUCTION_ADC"); break;
+        case INSTRUCTION_SBC: strcpy(buffer, "INSTRUCTION_SBC"); break;
+        case INSTRUCTION_RSC: strcpy(buffer, "INSTRUCTION_RSC"); break;
+        case INSTRUCTION_TST: strcpy(buffer, "INSTRUCTION_TST"); break;
+        case INSTRUCTION_TEQ: strcpy(buffer, "INSTRUCTION_TEQ"); break;
+        case INSTRUCTION_CMP: strcpy(buffer, "INSTRUCTION_CMP"); break;
+        case INSTRUCTION_CMN: strcpy(buffer, "INSTRUCTION_CMN"); break;
+        case INSTRUCTION_ORR: strcpy(buffer, "INSTRUCTION_ORR"); break;
+        case INSTRUCTION_MOV: strcpy(buffer, "INSTRUCTION_MOV"); break;
+        case INSTRUCTION_BIC: strcpy(buffer, "INSTRUCTION_BIC"); break;
+        case INSTRUCTION_MVN: strcpy(buffer, "INSTRUCTION_MVN"); break;
+        case INSTRUCTION_MRS: strcpy(buffer, "INSTRUCTION_MRS"); break;
+        case INSTRUCTION_MSR: strcpy(buffer, "INSTRUCTION_MSR"); break;
+        case INSTRUCTION_MUL: strcpy(buffer, "INSTRUCTION_MUL"); break;
+        case INSTRUCTION_MLA: strcpy(buffer, "INSTRUCTION_MLA"); break;
+        case INSTRUCTION_MULL: strcpy(buffer, "INSTRUCTION_MULL"); break;
+        case INSTRUCTION_MLAL: strcpy(buffer, "INSTRUCTION_MLAL"); break;
+        case INSTRUCTION_LDR: strcpy(buffer, "INSTRUCTION_LDR"); break;
+        case INSTRUCTION_STR: strcpy(buffer, "INSTRUCTION_STR"); break;
+        case INSTRUCTION_LDRH_IMM: strcpy(buffer, "INSTRUCTION_LDRH_IMM"); break;
+        case INSTRUCTION_STRH_IMM: strcpy(buffer, "INSTRUCTION_STRH_IMM"); break;
+        case INSTRUCTION_LDRSB_IMM: strcpy(buffer, "INSTRUCTION_LDRSB_IMM"); break;
+        case INSTRUCTION_LDRSH_IMM: strcpy(buffer, "INSTRUCTION_LDRSH_IMM"); break;
+        case INSTRUCTION_LDRH: strcpy(buffer, "INSTRUCTION_LDRH"); break;
+        case INSTRUCTION_STRH: strcpy(buffer, "INSTRUCTION_STRH"); break;
+        case INSTRUCTION_LDRSB: strcpy(buffer, "INSTRUCTION_LDRSB"); break;
+        case INSTRUCTION_LDRSH: strcpy(buffer, "INSTRUCTION_LDRSH"); break;
+        case INSTRUCTION_LDM: strcpy(buffer, "INSTRUCTION_LDM"); break;
+        case INSTRUCTION_STM: strcpy(buffer, "INSTRUCTION_STM"); break;
+        case INSTRUCTION_SWP: strcpy(buffer, "INSTRUCTION_SWP"); break;
+        case INSTRUCTION_SWI: strcpy(buffer, "INSTRUCTION_SWI"); break;
+        case INSTRUCTION_CDP: strcpy(buffer, "INSTRUCTION_CDP"); break;
+        case INSTRUCTION_STC: strcpy(buffer, "INSTRUCTION_STC"); break;
+        case INSTRUCTION_LDC: strcpy(buffer, "INSTRUCTION_LDC"); break;
+        case INSTRUCTION_MCR: strcpy(buffer, "INSTRUCTION_MCR"); break;
+        case INSTRUCTION_MRC: strcpy(buffer, "INSTRUCTION_MRC"); break;
     }
 }
 
@@ -402,6 +471,12 @@ should_execute_instruction(Condition condition)
         case CONDITION_AL: return true; // Always
         default: {
             fprintf(stderr, "Unexpected condition: %x\n", condition);
+            char type_name[64];
+            get_instruction_type_name(decoded_instruction.type, type_name);
+            fprintf(stderr, "Current instruction: 0x%x -> type = %s\n", current_instruction, type_name);
+
+            print_cpu_state();
+
             exit(1);
         }
     }
@@ -639,20 +714,6 @@ execute()
         } break;
 
         // Single Data Transfer
-        case INSTRUCTION_LDR: {
-            DEBUG_PRINT("INSTRUCTION_LDR\n");
-            
-            assert(!"Implement");
-        } break;
-        case INSTRUCTION_STR: {
-            DEBUG_PRINT("INSTRUCTION_STR\n");
-            
-            assert(!"Implement");
-        } break;
-
-
-
-        // Halfword and signed data transfer
 #define UPDATE_BASE_OFFSET()            \
     do {                                \
         if (decoded_instruction.U) {    \
@@ -662,7 +723,69 @@ execute()
         }                               \
     } while (0)
 
+        case INSTRUCTION_LDR: {
+            DEBUG_PRINT("INSTRUCTION_LDR\n");
+            
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_STR: {
+            DEBUG_PRINT("INSTRUCTION_STR\n");
+            
+            u32 base = cpu.r[decoded_instruction.rn];
+            u16 offset;
 
+            if (decoded_instruction.I) {
+                u8 carry;
+                u32 offset_register = cpu.r[decoded_instruction.offset & 0xF];
+                u8 shift = (decoded_instruction.offset >> 4) & 0xFF;
+                u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
+                if (shift & 1) {
+                    // Shift register
+                    u8 rs = (shift >> 4) & 0xF ; // Register to the value to shift.
+                    offset = (u16)apply_shift(offset_register, (u8)(cpu.r[rs] & 0xF), shift_type, &carry);
+                } else {
+                    // Shift amount
+                    u8 shift_amount = (shift >> 3) & 0b11111;
+                    offset = (u16)apply_shift(offset_register, shift_amount, shift_type, &carry);
+                }
+
+            } else {
+                offset = (u16)decoded_instruction.offset;
+            }
+            
+            if (decoded_instruction.P) {
+                UPDATE_BASE_OFFSET();
+                u8 *address = get_memory_region_at(base);
+
+                // Store data
+                if (decoded_instruction.B) {
+                    cpu.r[decoded_instruction.rd] = *((u8 *)((u32 *)address));
+                } else {
+                    cpu.r[decoded_instruction.rd] = *((u32 *)address);
+                }
+
+                if (decoded_instruction.W) {
+                    cpu.r[decoded_instruction.rn] = base;
+                }
+            } else {
+                u8 *address = get_memory_region_at(base);
+
+                // Store data
+                if (decoded_instruction.B) {
+                    cpu.r[decoded_instruction.rd] = *((u8 *)((u32 *)address));
+                } else {
+                    cpu.r[decoded_instruction.rd] = *((u32 *)address);
+                }
+
+                UPDATE_BASE_OFFSET();
+                cpu.r[decoded_instruction.rn] = base;
+            }
+
+        } break;
+
+
+
+        // Halfword and signed data transfer
         case INSTRUCTION_LDRH_IMM: {
             DEBUG_PRINT("INSTRUCTION_LDRH_IMM\n");
             
@@ -693,26 +816,48 @@ execute()
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
-                u8 *memory_region = get_memory_region_at(base);
-                cpu.r[decoded_instruction.rd] = *((u16 *)memory_region);
+                u8 *address = get_memory_region_at(base);
+                // u8 *address = memory.iwram + base;
+                cpu.r[decoded_instruction.rd] = *((u16 *)address);
 
                 if (decoded_instruction.W) {
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *memory_region = get_memory_region_at(base);
-                cpu.r[decoded_instruction.rd] = *((u16 *)memory_region);
+                u8 *address = get_memory_region_at(base);
+                // u8 *address = memory.iwram + base;
+                cpu.r[decoded_instruction.rd] = *((u16 *)address);
 
                 UPDATE_BASE_OFFSET();
                 cpu.r[decoded_instruction.rn] = base;
             }
 
-
         } break;
         case INSTRUCTION_STRH: {
             DEBUG_PRINT("INSTRUCTION_STRH\n");
             
-            assert(!"Implement");
+            int base = cpu.r[decoded_instruction.rn];
+            int offset = cpu.r[decoded_instruction.rm];
+            
+            if (decoded_instruction.P) {
+                UPDATE_BASE_OFFSET();
+
+                u8 *address = get_memory_region_at(base);
+                // u8 *address = memory.iwram + base;
+                *((u16 *)address) = (u16)cpu.r[decoded_instruction.rd];
+
+                if (decoded_instruction.W) {
+                    cpu.r[decoded_instruction.rn] = base;
+                }
+            } else {
+                u8 *address = get_memory_region_at(base);
+                // u8 *address = memory.iwram + base;
+                *((u16 *)address) = (u16)cpu.r[decoded_instruction.rd];
+
+                UPDATE_BASE_OFFSET();
+                cpu.r[decoded_instruction.rn] = base;
+            }
+
         } break;
         case INSTRUCTION_LDRSB: {
             DEBUG_PRINT("INSTRUCTION_LDRSB\n");
@@ -724,9 +869,10 @@ execute()
                 UPDATE_BASE_OFFSET();
 
                 u8 *memory_region = get_memory_region_at(base);
+                // u8 *memory_region = memory.iwram + base;
                 u8 value = *memory_region;
                 u8 sign = (value >> 7) & 1;
-                u32 value_sign_extended = (-sign << 31) | value;
+                u32 value_sign_extended = (((u32)-sign) << 8) | value;
 
                 cpu.r[decoded_instruction.rd] = value_sign_extended;
 
@@ -735,58 +881,106 @@ execute()
                 }
             } else {
                 u8 *memory_region = get_memory_region_at(base);
+                // u8 *memory_region = memory.iwram + base;
                 u8 value = *memory_region;
                 u8 sign = (value >> 7) & 1;
-                u32 value_sign_extended = (-sign << 31) | value;
+                u32 value_sign_extended = (((u32)-sign) << 8) | value;
 
                 cpu.r[decoded_instruction.rd] = value_sign_extended;
 
                 UPDATE_BASE_OFFSET();
                 cpu.r[decoded_instruction.rn] = base;
             }
+
         } break;
         case INSTRUCTION_LDRSH: {
             DEBUG_PRINT("INSTRUCTION_LDRSH\n");
             
-            assert(!"Implement");
+            int base = cpu.r[decoded_instruction.rn];
+            int offset = cpu.r[decoded_instruction.rm];
+            
+            if (decoded_instruction.P) {
+                UPDATE_BASE_OFFSET();
+
+                u8 *memory_region = get_memory_region_at(base);
+                // u8 *memory_region = memory.iwram + base;
+                u16 value = *((u16 *)memory_region);
+                u8 sign = (value >> 15) & 1;
+                u32 value_sign_extended = (((u32)-sign) << 16) | value;
+
+                cpu.r[decoded_instruction.rd] = value_sign_extended;
+                
+                if (decoded_instruction.W) {
+                    cpu.r[decoded_instruction.rn] = base;
+                }
+            } else {
+                u8 *memory_region = get_memory_region_at(base);
+                // u8 *memory_region = memory.iwram + base;
+                u16 value = *((u16 *)memory_region);
+                u8 sign = (value >> 15) & 1;
+                u32 value_sign_extended = (((u32)-sign) << 16) | value;
+
+                cpu.r[decoded_instruction.rd] = value_sign_extended;
+
+                UPDATE_BASE_OFFSET();
+                cpu.r[decoded_instruction.rn] = base;
+            }
+            
         } break;
 
 #undef UPDATE_BASE_OFFSET
 
 
-
         // Block Data Transfer
-#define INCREMENT_DECREMENT_BASE_ADDRESS()  \
-    do {                                    \
-        if (decoded_instruction.U) {        \
-            base_address++;                 \
-        } else {                            \
-            base_address--;                 \
-        }                                   \
-    } while (0)
-
         case INSTRUCTION_LDM: {
-            DEBUG_PRINT("INSTRUCTION_LDM\n");
-            
-            u32 base_address = cpu.r[decoded_instruction.rn];
+            s32 base_address = cpu.r[decoded_instruction.rn];
             u16 register_list = decoded_instruction.register_list;
+            int register_index = (decoded_instruction.U) ? 0 : 15;
             while (register_list) {
-                u8 register_number = register_list & 1;
-                if (register_number) {
-                    if (decoded_instruction.P) {
-                        INCREMENT_DECREMENT_BASE_ADDRESS();
-                        
-                        u32 *address = (u32 *)get_memory_region_at(base_address);
-                        cpu.r[register_number] = *address;
-                    } else {
-                        u32 *address = (u32 *)get_memory_region_at(base_address);
-                        cpu.r[register_number] = *address;
-                        
-                        INCREMENT_DECREMENT_BASE_ADDRESS();
+                if (decoded_instruction.U) {
+                    // Increment
+                    bool register_index_set = register_list & 1;
+                    if (register_index_set) {
+                        if (decoded_instruction.P) {
+                            base_address++;
+                            
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            // u32 *address = (u32 *)(memory.iwram) + base_address;
+                            cpu.r[register_index] = *address;
+                        } else {
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            // u32 *address = (u32 *)(memory.iwram) + base_address;
+                            cpu.r[register_index] = *address;
+                            
+                            base_address++;
+                        }
                     }
-                }
 
-                register_list >>= 1;
+                    register_index++;
+                    register_list >>= 1;
+                } else {
+                    // Decrement
+                    bool register_index_set = (register_list >> 15) & 1;
+                    if (register_index_set) {
+                        if (decoded_instruction.P) {
+                            base_address--;
+                            
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            // u32 *address = (u32 *)(memory.iwram) + base_address;
+                            cpu.r[register_index] = *address;
+                        } else {
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            // u32 *address = (u32 *)(memory.iwram) + base_address;
+                            cpu.r[register_index] = *address;
+
+                            base_address--;
+                        }
+                    }
+
+                    register_index--;
+                    register_list <<= 1;
+                }
+                
             }
 
             if (decoded_instruction.W) {
@@ -799,23 +993,52 @@ execute()
             
             u32 base_address = cpu.r[decoded_instruction.rn];
             u16 register_list = decoded_instruction.register_list;
+            int register_index = (decoded_instruction.U) ? 0 : 15;
             while (register_list) {
-                u8 register_number = register_list & 1;
-                if (register_number) {
-                    if (decoded_instruction.P) {
-                        INCREMENT_DECREMENT_BASE_ADDRESS();
-                        
-                        u32 *address = (u32 *)get_memory_region_at(base_address);
-                        *address = cpu.r[register_number];
-                    } else {
-                        u32 *address = (u32 *)get_memory_region_at(base_address);
-                        *address = cpu.r[register_number];
-                        
-                        INCREMENT_DECREMENT_BASE_ADDRESS();
+                if (decoded_instruction.U) {
+                    // Increment
+                    bool register_index_set = register_list & 1;
+                    if (register_index_set) {
+                        if (decoded_instruction.P) {
+                            base_address++;
+                            
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            // u32 *address = (u32 *)(memory.iwram) + base_address;
+                            *address = cpu.r[register_index];
+                        } else {
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            // u32 *address = (u32 *)(memory.iwram) + base_address;
+                            *address = cpu.r[register_index];
+                            
+                            base_address++;
+                        }
                     }
-                }
 
-                register_list >>= 1;
+                    register_index++;
+                    register_list >>= 1;
+                } else {
+                    // Decrement
+                    bool register_index_set = (register_list >> 15) & 1;
+                    if (register_index_set) {
+                        if (decoded_instruction.P) {
+                            base_address--;
+                            
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            // u32 *address = (u32 *)(memory.iwram) + base_address;
+                            *address = cpu.r[register_index];
+                        } else {
+                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            // u32 *address = (u32 *)(memory.iwram) + base_address;
+                            *address = cpu.r[register_index];
+                            
+                            base_address--;
+                        }
+                    }
+
+                    register_index--;
+                    register_list <<= 1;
+                }
+                
             }
 
             if (decoded_instruction.W) {
@@ -842,9 +1065,9 @@ execute()
 
         // Coprocessor Data Operations
         case INSTRUCTION_CDP: {
-            DEBUG_PRINT("INSTRUCTION_CDP\n");
+            DEBUG_PRINT("INSTRUCTION_CDP... Not implemented for now\n");
             
-            assert(!"Implement");
+            // assert(!"Implement");
         } break;
 
         // Coprocessor Data Transfers
@@ -906,7 +1129,7 @@ decode()
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) {
         // printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION: 0x%x\n", current_instruction);
-
+        
         // TODO: Not handle at the moment. See if this is for multicable support.
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_CDP,
@@ -1214,7 +1437,6 @@ static void
 fetch()
 {
     current_instruction = ((u32 *)memory.game_pak_rom)[cpu.pc++];
-    pc_incremented++;
 }
 
 static void
@@ -1274,14 +1496,18 @@ int main()
     char *filename = "Donkey Kong Country 2.gba";
     int error = load_cartridge_into_memory(filename);
     if (error) {
-        exit(1);
+        error = load_cartridge_into_memory("../Donkey Kong Country 2.gba");
+        if (error) {
+            exit(1);
+        }
     }
     
     CartridgeHeader *header = (CartridgeHeader *)memory.game_pak_rom;
     printf("fixed_value = 0x%x, expected = 0x96\n", header->fixed_value);
 
     process_instructions();
-    // decode_debug();
+
+    print_cpu_state();
 
     return 0;
 }
