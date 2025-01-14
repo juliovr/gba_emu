@@ -1000,7 +1000,7 @@ execute()
                     bool register_index_set = register_list & 1;
                     if (register_index_set) {
                         if (decoded_instruction.P) {
-                            base_address++;
+                            base_address += 4;
                             
                             u32 *address = (u32 *)get_memory_region_at(base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
@@ -1010,7 +1010,7 @@ execute()
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
                             
-                            base_address++;
+                            base_address += 4;
                         }
                     }
 
@@ -1021,7 +1021,7 @@ execute()
                     bool register_index_set = (register_list >> 15) & 1;
                     if (register_index_set) {
                         if (decoded_instruction.P) {
-                            base_address--;
+                            base_address -= 4;
                             
                             u32 *address = (u32 *)get_memory_region_at(base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
@@ -1031,7 +1031,7 @@ execute()
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
                             
-                            base_address--;
+                            base_address -= 4;
                         }
                     }
 
