@@ -1,13 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <string.h>
 
 #include "types.h"
 
 
 
 #ifdef _DEBUG
-#define DEBUG_PRINT(format, ...) printf(format, __VA_ARGS__)
+    #ifdef _LINUX
+        #define DEBUG_PRINT(format, ...) printf(format, ##__VA_ARGS__)
+    #else
+        #define DEBUG_PRINT(format, ...) printf(format, __VA_ARGS__)
+    #endif
 #else
 #define DEBUG_PRINT(...)
 #endif
@@ -40,8 +45,7 @@ print_cpu_state()
 
     char cpsr_buffer[33];
     num_to_binary_32(cpsr_buffer, cpu.cpsr);
-    printf(cpsr_buffer);
-    printf("\n");
+    printf("%s\n", cpsr_buffer);
     
     printf("----------------\n");
 }
@@ -125,8 +129,8 @@ get_memory_region_at(u32 at)
 static int
 load_cartridge_into_memory(char *filename)
 {
-    FILE *file;
-    if (fopen_s(&file, filename, "rb")) {
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL) {
         fprintf(stderr, "[ERROR]: Could not load file \"%s\"\n", filename);
         return 1;
     } else {
