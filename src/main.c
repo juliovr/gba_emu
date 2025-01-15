@@ -478,6 +478,27 @@ process_data_processing()
 }
 
 static void
+process_psr_transfer()
+{
+    switch (decoded_instruction.type) {
+        case INSTRUCTION_MRS: {
+            DEBUG_PRINT("INSTRUCTION_MRS\n");
+            
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_MSR: {
+            DEBUG_PRINT("INSTRUCTION_MSR\n");
+            
+            assert(!"Implement");
+        } break;
+
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
+
+static void
 execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
@@ -495,149 +516,25 @@ execute()
         case INSTRUCTION_CATEGORY_DATA_PROCESSING: {
             process_data_processing();
         } break;
+        case INSTRUCTION_CATEGORY_PSR_TRANSFER: {
+            process_psr_transfer();
+        } break;
+        case INSTRUCTION_CATEGORY_MULTIPLY: {
+            
+        } break;
+        
+#ifdef _DEBUG
+        case INSTRUCTION_CATEGORY_DEBUG: {
+            if (decoded_instruction.type == INSTRUCTION_DEBUG_EXIT) {
+                is_running = false;
+            }
+        }
+#endif
     }
 #else
     switch (decoded_instruction.type) {
-        // Branch
-        case INSTRUCTION_B: {
-            DEBUG_PRINT("INSTRUCTION_B\n");
-
-            if (decoded_instruction.L) {
-                cpu.lr = cpu.pc - 1;
-            }
-
-            cpu.pc += (decoded_instruction.offset << 2);
-            current_instruction = 0;
-        } break;
-
-        // Data processing
-        case INSTRUCTION_ADD: {
-            DEBUG_PRINT("INSTRUCTION_ADD\n");
-
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry));
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_AND: {
-            DEBUG_PRINT("INSTRUCTION_AND\n");
-
-            // DATA_PROCESSING(cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
-            u8 carry = 0;
-            u32 result = (cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
-
-            if (decoded_instruction.S && decoded_instruction.rd != 15) {
-                /*if (decoded_instruction.I == 0) {
-                    u8 rs = (shift >> 4) & 0xF;
-                    if (((u8)cpu.r[rs] & 0xF) == 0) {
-                        carry = CONDITION_C;
-                    }
-                } */
-
-                set_condition_C(carry);
-                set_condition_Z(result == 0);
-                set_condition_N(result >> 31);
-            }
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_EOR: {
-            DEBUG_PRINT("INSTRUCTION_EOR\n");
-            
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] ^ get_second_operand(&carry));
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_SUB: {
-            DEBUG_PRINT("INSTRUCTION_SUB\n");
-            
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry));
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_RSB: {
-            DEBUG_PRINT("INSTRUCTION_RSB\n");
-
-            DATA_PROCESSING(get_second_operand(&carry) - cpu.r[decoded_instruction.rn]);
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_ADC: {
-            DEBUG_PRINT("INSTRUCTION_ADC\n");
-
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry) + carry);
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_SBC: {
-            DEBUG_PRINT("INSTRUCTION_SBC\n");
-
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry) + carry - 1);
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_RSC: {
-            DEBUG_PRINT("INSTRUCTION_RSC\n");
-
-            DATA_PROCESSING(get_second_operand(&carry) - cpu.r[decoded_instruction.rn] + carry - 1);
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_TST: {
-            DEBUG_PRINT("INSTRUCTION_TST\n");
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
-        } break;
-        case INSTRUCTION_TEQ: {
-            DEBUG_PRINT("INSTRUCTION_TEQ\n");
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] ^ get_second_operand(&carry));
-        } break;
-        case INSTRUCTION_CMP: {
-            DEBUG_PRINT("INSTRUCTION_CMP\n");
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] - get_second_operand(&carry));
-        } break;
-        case INSTRUCTION_CMN: {
-            DEBUG_PRINT("INSTRUCTION_CMN\n");
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] + get_second_operand(&carry));
-        } break;
-        case INSTRUCTION_ORR: {
-            DEBUG_PRINT("INSTRUCTION_ORR\n");
-
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] | get_second_operand(&carry));
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_MOV: {
-            DEBUG_PRINT("INSTRUCTION_MOV\n");
-
-            DATA_PROCESSING(get_second_operand(&carry));
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_BIC: {
-            DEBUG_PRINT("INSTRUCTION_BIC\n");
-
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] & !get_second_operand(&carry));
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-        case INSTRUCTION_MVN: {
-            DEBUG_PRINT("INSTRUCTION_MVN\n");
-
-            DATA_PROCESSING(!get_second_operand(&carry));
-            
-            cpu.r[decoded_instruction.rd] = result;
-        } break;
-
-        // PSR Transfer
-        case INSTRUCTION_MRS: {
-            DEBUG_PRINT("INSTRUCTION_MRS\n");
-            
-            assert(!"Implement");
-        } break;
-        case INSTRUCTION_MSR: {
-            DEBUG_PRINT("INSTRUCTION_MSR\n");
-            
-            assert(!"Implement");
-        } break;
+        
+        
 
         // Multiply
         case INSTRUCTION_MUL: {
@@ -1570,12 +1467,9 @@ void init_AND()
     cpu.r0 = 7;
     
     add_instruction(&cartridge, instruction);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, no_op);
     add_instruction(&cartridge, exit_instruction);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, no_op);
     load_test_cartridge_into_memory(&cartridge);
 }
 
@@ -1621,7 +1515,7 @@ DEFINE_TEST(test_B, test_B);
 
 int main(int argc, char *argv[])
 {
-#if 1
+#if 0
     char *filename = "Donkey Kong Country 2.gba";
     int error = load_cartridge_into_memory(filename);
     if (error) {
