@@ -1,23 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <assert.h>
 
+#include "types.h"
 
-#define KILOBYTE (1024)
-#define MEGABYTE (1024*1024)
-
-typedef uint8_t  u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef int8_t   s8;
-typedef int16_t  s16;
-typedef int32_t  s32;
-
-
-#define true 1
-#define false 0
-typedef int bool;
 
 
 #ifdef _DEBUG
@@ -26,38 +12,8 @@ typedef int bool;
 #define DEBUG_PRINT(...)
 #endif
 
-typedef struct CPU {
-    union {
-        struct {
-            u32 r0;
-            u32 r1;
-            u32 r2;
-            u32 r3;
-            u32 r4;
-            u32 r5;
-            u32 r6;
-            u32 r7;
-            u32 r8;
-            u32 r9;
-            u32 r10;
-            u32 r11;
-            u32 r12;
-            u32 r13;
-            union {
-                u32 r14;
-                u32 lr;
-            };
-            union {
-                u32 r15;
-                u32 pc;
-            };
-        };
-        u32 r[16];
-    };
 
-    u32 cpsr; // Current Program Status Register
-    // TODO: how to store the banked registers.
-} CPU;
+bool is_running = true;
 
 CPU cpu = {0};
 
@@ -106,73 +62,35 @@ print_cpu_state()
 #define CONDITION_Z             ((cpu.cpsr >> 30) & 1)     /* Zero */
 #define CONDITION_N             ((cpu.cpsr >> 31) & 1)     /* Negative or less than */
 
-// #define SET_CONDITION_V(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 28)) | ((bit) & 1) << 28))
-// #define SET_CONDITION_C(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | ((bit) & 1) << 29))
-// #define SET_CONDITION_Z(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 30)) | ((bit) & 1) << 30))
-// #define SET_CONDITION_N(bit)    (cpu.cpsr = ((cpu.cpsr & ~(1 << 31)) | ((bit) & 1) << 31))
-
-
 static void
-SET_CONDITION_V(u8 bit)
+set_condition_V(u8 bit)
 {
     cpu.cpsr = ((cpu.cpsr & ~(1 << 28)) | ((bit) & 1) << 28);
 }
 
 static void
-SET_CONDITION_C(u8 bit)
+set_condition_C(u8 bit)
 {
     cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | ((bit) & 1) << 29);
 }
 
 static void
-SET_CONDITION_Z(u8 bit)
+set_condition_Z(u8 bit)
 {
     cpu.cpsr = ((cpu.cpsr & ~(1 << 30)) | ((bit) & 1) << 30);
 }
 
 static void
-SET_CONDITION_N(u8 bit)
+set_condition_N(u8 bit)
 {
     cpu.cpsr = ((cpu.cpsr & ~(1 << 31)) | ((bit) & 1) << 31);
 }
 
 
-// TODO: is it necessary to make fields for the "Not used" data to make the load simpler?
-typedef struct GBAMemory {
-    // General Internal Memory
-    u8 bios_system_rom[16*KILOBYTE];
-    // 00004000-01FFFFFF   Not used
-    u8 ewram[256*KILOBYTE];
-    // 02040000-02FFFFFF   Not used
-    u8 iwram[32*KILOBYTE];
-    // 03008000-03FFFFFF   Not used
-    u8 io_registers[1*KILOBYTE];
-    // 04000400-04FFFFFF   Not used
-
-    // Internal Display Memory
-    u8 bg_obj_palette_ram[1*KILOBYTE];
-    // 05000400-05FFFFFF   Not used
-    u8 vram[96*KILOBYTE];
-    // 06018000-06FFFFFF   Not used
-    u8 oam_obj_attributes[1*KILOBYTE];
-    // 07000400-07FFFFFF   Not used
-
-    // External Memory (Game Pak)
-    u8 game_pak_rom[32*MEGABYTE];
-    // 0A000000-0BFFFFFF   Game Pak ROM/FlashROM (max 32MB) - Wait State 1
-    // 0C000000-0DFFFFFF   Game Pak ROM/FlashROM (max 32MB) - Wait State 2
-    u8 game_pak_ram[64*MEGABYTE];
-    // 0E010000-0FFFFFFF   Not used
-
-    // Unused Memory Area
-    // 10000000-FFFFFFFF   Not used (upper 4bits of address bus unused)
-
-} GBAMemory;
-
 GBAMemory memory = {0};
 
 static u8 *
-get_memory_region_at(int at)
+get_memory_region_at(u32 at)
 {
     // General Internal Memory
     if (at <= 0x00003FFF) return (memory.bios_system_rom + (at - 0x00000000));
@@ -224,6 +142,12 @@ load_cartridge_into_memory(char *filename)
     return 0;
 }
 
+static void
+init_gba()
+{
+    memset(&cpu, 0, sizeof(CPU));
+    memset(&memory, 0, sizeof(GBAMemory));
+}
 
 /*
  * Example for rom_entry_point:
@@ -252,122 +176,6 @@ typedef struct CartridgeHeader {
     u32 joybus_entry_point;
 } CartridgeHeader;
 
-
-#define INSTRUCTION_FORMAT_DATA_PROCESSING                              (0)
-#define INSTRUCTION_FORMAT_MULTIPLY                                     (0b0000000000000000000010010000)
-#define INSTRUCTION_FORMAT_MULTIPLY_LONG                                (0b0000100000000000000010010000)
-#define INSTRUCTION_FORMAT_SINGLE_DATA_SWAP                             (0b0001000000000000000010010000)
-#define INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE                          (0b0001001011111111111100010000)
-#define INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET       (0b0000000000000000000010010000)
-#define INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET      (0b0000010000000000000010010000)
-#define INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER                         (1 << 26)
-#define INSTRUCTION_FORMAT_UNDEFINED                                    ((0b11 << 25) | (1 << 4))
-#define INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER                          (1 << 27)
-#define INSTRUCTION_FORMAT_BRANCH                                       (0b101 << 25)
-#define INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER                    (0b11 << 26)
-#define INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION                   (0b111 << 25)
-#define INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER                ((0b111 << 25) | (1 << 4))
-#define INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT                           (0b1111 << 24)
-
-
-typedef enum ShiftType {
-    SHIFT_TYPE_LOGICAL_LEFT     = 0b00,
-    SHIFT_TYPE_LOGICAL_RIGHT    = 0b01,
-    SHIFT_TYPE_ARITHMETIC_RIGHT = 0b10,
-    SHIFT_TYPE_ROTATE_RIGHT     = 0b11,
-} ShiftType;
-
-typedef enum Condition {
-    CONDITION_EQ = 0b0000,
-    CONDITION_NE = 0b0001,
-    CONDITION_CS = 0b0010,
-    CONDITION_CC = 0b0011,
-    CONDITION_MI = 0b0100,
-    CONDITION_PL = 0b0101,
-    CONDITION_VS = 0b0110,
-    CONDITION_VC = 0b0111,
-    CONDITION_HI = 0b1000,
-    CONDITION_LS = 0b1001,
-    CONDITION_GE = 0b1010,
-    CONDITION_LT = 0b1011,
-    CONDITION_GT = 0b1100,
-    CONDITION_LE = 0b1101,
-    CONDITION_AL = 0b1110,
-} Condition;
-
-typedef enum InstructionType {
-    INSTRUCTION_NONE,
-
-    // Branch
-    INSTRUCTION_B,
-    INSTRUCTION_BX,
-
-    // Data Processing
-    INSTRUCTION_AND,
-    INSTRUCTION_EOR,
-    INSTRUCTION_SUB,
-    INSTRUCTION_RSB,
-    INSTRUCTION_ADD,
-    INSTRUCTION_ADC,
-    INSTRUCTION_SBC,
-    INSTRUCTION_RSC,
-    INSTRUCTION_TST,
-    INSTRUCTION_TEQ,
-    INSTRUCTION_CMP,
-    INSTRUCTION_CMN,
-    INSTRUCTION_ORR,
-    INSTRUCTION_MOV,
-    INSTRUCTION_BIC,
-    INSTRUCTION_MVN,
-
-    // PSR Transfer
-    INSTRUCTION_MRS,
-    INSTRUCTION_MSR,
-
-    // Multiply
-    INSTRUCTION_MUL,
-    INSTRUCTION_MLA,
-    INSTRUCTION_MULL,
-    INSTRUCTION_MLAL,
-
-    // Single Data Transfer
-    INSTRUCTION_LDR,
-    INSTRUCTION_STR,
-
-    // Halfword and signed data transfer
-    
-    // TODO: Used to differentiate the instructions with immediate offset against register offset. Maybe change this later.
-    INSTRUCTION_LDRH_IMM,
-    INSTRUCTION_STRH_IMM,
-    INSTRUCTION_LDRSB_IMM,
-    INSTRUCTION_LDRSH_IMM,
-    
-    INSTRUCTION_LDRH,
-    INSTRUCTION_STRH,
-    INSTRUCTION_LDRSB,
-    INSTRUCTION_LDRSH,
-
-    // Block Data Transfer
-    INSTRUCTION_LDM,
-    INSTRUCTION_STM,
-
-    // Single Data Swap
-    INSTRUCTION_SWP,
-
-    // Software Interrupt
-    INSTRUCTION_SWI,
-
-    // Coprocessor Data Operations
-    INSTRUCTION_CDP,
-
-    // Coprocessor Data Transfers
-    INSTRUCTION_STC,
-    INSTRUCTION_LDC,
-
-    // Coprocessor Register Transfers
-    INSTRUCTION_MCR,
-    INSTRUCTION_MRC,
-} InstructionType;
 
 static void
 get_instruction_type_name(InstructionType type, char *buffer)
@@ -417,42 +225,21 @@ get_instruction_type_name(InstructionType type, char *buffer)
         case INSTRUCTION_LDC: strcpy(buffer, "INSTRUCTION_LDC"); break;
         case INSTRUCTION_MCR: strcpy(buffer, "INSTRUCTION_MCR"); break;
         case INSTRUCTION_MRC: strcpy(buffer, "INSTRUCTION_MRC"); break;
+        case INSTRUCTION_DEBUG_EXIT: strcpy(buffer, "INSTRUCTION_DEBUG_EXIT"); break;
     }
 }
 
 u32 current_instruction;
-
-typedef struct Instruction {
-    InstructionType type;
-    Condition condition;
-    int offset;
-    u8 L;
-    u8 S;
-    u8 rn;
-    u8 I;
-    u8 P;
-    u8 U;
-    u8 W;
-    u8 B;
-    u8 A;
-    u8 H;
-    union {
-        u16 second_operand;
-        u16 register_list;
-    };
-    u8 rd;
-    u8 rm;
-    u8 rs;
-    u8 rdhi;
-    u8 rdlo;
-    u16 source_operand;
-} Instruction;
 
 Instruction decoded_instruction;
 
 static bool
 should_execute_instruction(Condition condition)
 {
+#ifdef _DEBUG
+    if (decoded_instruction.type == INSTRUCTION_DEBUG_EXIT) return true;
+#endif
+
     switch (condition) {
         case CONDITION_EQ: return (CONDITION_Z == 1);
         case CONDITION_NE: return (CONDITION_Z == 0);
@@ -483,7 +270,7 @@ should_execute_instruction(Condition condition)
 }
 
 static int
-apply_shift(u32 value, u8 shift, ShiftType shift_type, u8 *carry)
+apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
 {
     switch (shift_type) {
         case SHIFT_TYPE_LOGICAL_LEFT: {
@@ -517,43 +304,178 @@ apply_shift(u32 value, u8 shift, ShiftType shift_type, u8 *carry)
     return value;
 }
 
-static u32
-get_second_operand(u8 *carry)
+static void
+process_branch()
 {
+    switch (decoded_instruction.type) {
+        case INSTRUCTION_B: {
+            DEBUG_PRINT("INSTRUCTION_B\n");
+
+            if (decoded_instruction.L) {
+                cpu.lr = cpu.pc - 1;
+            }
+
+            cpu.pc += (decoded_instruction.offset << 2);
+            current_instruction = 0;
+        } break;
+
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
+
+static void
+process_data_processing()
+{
+    u8 carry = 0;
     int second_operand;
     if (decoded_instruction.I) {
         u8 imm = decoded_instruction.second_operand & 0xFF;
-        u8 rotate = (decoded_instruction.second_operand >> 8) & 0xF;
+        u32 rotate = (decoded_instruction.second_operand >> 8) & 0xF;
+        // NOTE: This value is zero extended to 32 bits, and then subject to a rotate right by twice the value in the rotate field.
+        rotate *= 2;
 
-        second_operand = apply_shift(imm, rotate, SHIFT_TYPE_ROTATE_RIGHT, carry);
+        second_operand = apply_shift(imm, rotate, SHIFT_TYPE_ROTATE_RIGHT, &carry);
     } else {
         int rm = decoded_instruction.second_operand & 0xF;
         u8 shift = (decoded_instruction.second_operand >> 4) & 0xFF;
         u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
         if (shift & 1) {
             // Shift register
-            u8 rs = (shift >> 4) & 0xF ; // Register to the value to shift.
-            second_operand = apply_shift(cpu.r[rm], (u8)(cpu.r[rs] & 0xF), shift_type, carry);
+            u8 rs = (shift >> 4) & 0xF; // Register to the value to shift.
+            second_operand = apply_shift(cpu.r[rm], (u8)(cpu.r[rs] & 0xF), shift_type, &carry);
         } else {
             // Shift amount
             u8 shift_amount = (shift >> 3) & 0b11111;
-            second_operand = apply_shift(cpu.r[rm], shift_amount, shift_type, carry);
+            second_operand = apply_shift(cpu.r[rm], shift_amount, shift_type, &carry);
         }
     }
 
-    return second_operand;
-}
 
-#define DATA_PROCESSING(expression)                                 \
-    u8 carry = 0;                                                   \
-    /*u32 second_operand = get_second_operand(&carry);*/                \
-    u32 result = (expression);                                      \
-                                                                    \
-    if (decoded_instruction.S && decoded_instruction.rd != 15) {    \
-        SET_CONDITION_C(carry);                                     \
-        SET_CONDITION_Z(result == 0);                               \
-        SET_CONDITION_N(result >> 31);                              \
+    bool store_result = false;
+    u32 result = 0;
+    
+    switch (decoded_instruction.type) {
+        case INSTRUCTION_ADD: {
+            DEBUG_PRINT("INSTRUCTION_ADD\n");
+
+            result = cpu.r[decoded_instruction.rn] + second_operand;
+            store_result = true;
+        } break;
+        case INSTRUCTION_AND: {
+            DEBUG_PRINT("INSTRUCTION_AND\n");
+
+            result = cpu.r[decoded_instruction.rn] & second_operand;
+            store_result = true;
+        } break;
+        case INSTRUCTION_EOR: {
+            DEBUG_PRINT("INSTRUCTION_EOR\n");
+            
+            result = cpu.r[decoded_instruction.rn] ^ second_operand;
+            store_result = true;
+        } break;
+        case INSTRUCTION_SUB: {
+            DEBUG_PRINT("INSTRUCTION_SUB\n");
+            
+            result = cpu.r[decoded_instruction.rn] - second_operand;
+            store_result = true;
+        } break;
+        case INSTRUCTION_RSB: {
+            DEBUG_PRINT("INSTRUCTION_RSB\n");
+
+            result = second_operand - cpu.r[decoded_instruction.rn];
+            store_result = true;
+        } break;
+        case INSTRUCTION_ADC: {
+            DEBUG_PRINT("INSTRUCTION_ADC\n");
+
+            result = cpu.r[decoded_instruction.rn] & second_operand + carry;
+            store_result = true;
+        } break;
+        case INSTRUCTION_SBC: {
+            DEBUG_PRINT("INSTRUCTION_SBC\n");
+
+            result = cpu.r[decoded_instruction.rn] - second_operand + carry - 1;
+            store_result = true;
+        } break;
+        case INSTRUCTION_RSC: {
+            DEBUG_PRINT("INSTRUCTION_RSC\n");
+
+            result = second_operand - cpu.r[decoded_instruction.rn] + carry - 1;
+            store_result = true;
+        } break;
+        case INSTRUCTION_TST: {
+            DEBUG_PRINT("INSTRUCTION_TST\n");
+            
+            result = cpu.r[decoded_instruction.rn] & second_operand;
+            store_result = false;
+        } break;
+        case INSTRUCTION_TEQ: {
+            DEBUG_PRINT("INSTRUCTION_TEQ\n");
+            
+            result = cpu.r[decoded_instruction.rn] ^ second_operand;
+            store_result = false;
+        } break;
+        case INSTRUCTION_CMP: {
+            DEBUG_PRINT("INSTRUCTION_CMP\n");
+            
+            result = cpu.r[decoded_instruction.rn] - second_operand;
+            store_result = false;
+        } break;
+        case INSTRUCTION_CMN: {
+            DEBUG_PRINT("INSTRUCTION_CMN\n");
+            
+            result = cpu.r[decoded_instruction.rn] + second_operand;
+            store_result = false;
+        } break;
+        case INSTRUCTION_ORR: {
+            DEBUG_PRINT("INSTRUCTION_ORR\n");
+
+            result = cpu.r[decoded_instruction.rn] | second_operand;
+            store_result = true;
+        } break;
+        case INSTRUCTION_MOV: {
+            DEBUG_PRINT("INSTRUCTION_MOV\n");
+
+            result = second_operand;
+            store_result = true;
+        } break;
+        case INSTRUCTION_BIC: {
+            DEBUG_PRINT("INSTRUCTION_BIC\n");
+
+            result = cpu.r[decoded_instruction.rn] & !second_operand;
+            store_result = true;
+        } break;
+        case INSTRUCTION_MVN: {
+            DEBUG_PRINT("INSTRUCTION_MVN\n");
+
+            result = !second_operand;
+            store_result = true;
+        } break;
+
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
     }
+
+    if (decoded_instruction.S && decoded_instruction.rd != 15) {
+        /*if (decoded_instruction.I == 0) {
+            u8 rs = (shift >> 4) & 0xF;
+            if (((u8)cpu.r[rs] & 0xF) == 0) {
+                carry = CONDITION_C;
+            }
+        } */
+
+        set_condition_C(carry != 0);
+        set_condition_Z(result == 0);
+        set_condition_N(result >> 31);
+    }
+    
+    if (store_result) {
+        cpu.r[decoded_instruction.rd] = result;
+    }
+}
 
 static void
 execute()
@@ -564,6 +486,17 @@ execute()
         goto exit_execute;
     }
 
+#if 1
+    InstructionCategory category = instruction_categories[decoded_instruction.type];
+    switch (category) {
+        case INSTRUCTION_CATEGORY_BRANCH: {
+            process_branch();
+        } break;
+        case INSTRUCTION_CATEGORY_DATA_PROCESSING: {
+            process_data_processing();
+        } break;
+    }
+#else
     switch (decoded_instruction.type) {
         // Branch
         case INSTRUCTION_B: {
@@ -588,7 +521,22 @@ execute()
         case INSTRUCTION_AND: {
             DEBUG_PRINT("INSTRUCTION_AND\n");
 
-            DATA_PROCESSING(cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
+            // DATA_PROCESSING(cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
+            u8 carry = 0;
+            u32 result = (cpu.r[decoded_instruction.rn] & get_second_operand(&carry));
+
+            if (decoded_instruction.S && decoded_instruction.rd != 15) {
+                /*if (decoded_instruction.I == 0) {
+                    u8 rs = (shift >> 4) & 0xF;
+                    if (((u8)cpu.r[rs] & 0xF) == 0) {
+                        carry = CONDITION_C;
+                    }
+                } */
+
+                set_condition_C(carry);
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+            }
             
             cpu.r[decoded_instruction.rd] = result;
         } break;
@@ -1093,8 +1041,13 @@ execute()
             
             assert(!"Implement");
         } break;
-    }
 
+
+        case INSTRUCTION_DEBUG_EXIT: {
+            is_running = false;
+        }
+    }
+#endif
 exit_execute:
     decoded_instruction = (Instruction){0};
 }
@@ -1111,6 +1064,12 @@ decode()
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_SWI,
         };
+        
+#ifdef _DEBUG
+        if ((current_instruction >> 28) & 0xF) {
+            decoded_instruction.type = INSTRUCTION_DEBUG_EXIT;
+        }
+#endif
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) {
         // printf("INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER: 0x%x\n", current_instruction);
@@ -1443,7 +1402,7 @@ static void
 process_instructions()
 {
     // Emulating pipelining.
-    while (1) {
+    while (is_running) {
         // TODO: in the future, check if this separation works (because of the order they are executed).
         execute();
         decode();
@@ -1491,8 +1450,178 @@ process_instructions()
 }
 #endif
 
-int main()
+
+
+
+
+
+
+
+
+
+// ==================================================
+// Part of the new header framework
+
+// ARM lack of a no-op instruciton.
+Instruction no_op = {
+    .type = INSTRUCTION_NONE,
+};
+
+Instruction exit_instruction = {
+    .type = INSTRUCTION_DEBUG_EXIT,
+};
+
+typedef struct TestCartridge {
+    // Instruction instructions[256];
+    // int count;
+    u32 instructions[256];
+    int count;
+} TestCartridge;
+
+void add_instruction(TestCartridge *cartridge, Instruction instruction)
 {
+    // cartridge->instructions[cartridge->count++] = instruction;
+
+    u32 encoding = instruction.condition << 28;
+
+    switch (instruction.type) {
+        case INSTRUCTION_B: {
+            encoding |= 0b101 << 25;
+            encoding |= instruction.L << 24;
+            encoding |= instruction.offset & 0xFFF;
+        } break;
+        case INSTRUCTION_AND: {
+            encoding |= (instruction.I & 1) << 25;
+            encoding |= (instruction.S & 1) << 20;
+            encoding |= (instruction.rn & 0xF) << 16;
+            encoding |= (instruction.rd & 0xF) << 12;
+            encoding |= (instruction.second_operand & 0xFFF);
+        } break;
+        case INSTRUCTION_NONE: {
+            encoding = 0;
+        } break;
+        case INSTRUCTION_DEBUG_EXIT: {
+            encoding = (u32)-1;
+        } break;
+    }
+
+    cartridge->instructions[cartridge->count++] = encoding;
+}
+
+void load_test_cartridge_into_memory(TestCartridge *cartridge)
+{
+    for (int i = 0; i < cartridge->count; i++) {
+        *(((u32 *)memory.game_pak_rom) + i) = cartridge->instructions[i];
+    }
+}
+// ==================================================
+
+TestCartridge cartridge = {0};
+
+void init_B()
+{
+    Instruction instruction = {
+        .type = INSTRUCTION_B,
+        .condition = CONDITION_AL,
+        .L = 0,
+        .offset = 1,
+    };
+
+    add_instruction(&cartridge, instruction);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, exit_instruction);
+    load_test_cartridge_into_memory(&cartridge);
+}
+
+void eval_B()
+{
+    /* Order of increments (because of prefetching):
+     * 1. Before executing B, pc = 2.
+     * 2. After executing B, pc = 6.
+     * 3. Next fetch, pc = 7.
+     * 4. Decoding exit_instruction, next fetch, pc = 8.
+     * 5. Set is_running flag to false, one last fetching, pc = 9.
+     */
+    CPU expected = {
+        .pc = 9,
+    };
+
+    printf("PC = %d, expected = %d\n", cpu.pc, expected.pc);
+}
+
+void init_AND()
+{
+    u8 rotate = 0;
+    u8 imm = 2;
+    Instruction instruction = {
+        .type = INSTRUCTION_AND,
+        .condition = CONDITION_AL,
+        .I = 1,
+        .S = 1,
+        .rn = 0,
+        .rd = 1,
+        .second_operand = ((rotate << 8) | imm) & 0xFFF,
+    };
+
+    cpu.r0 = 7;
+    
+    add_instruction(&cartridge, instruction);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, no_op);
+    add_instruction(&cartridge, exit_instruction);
+    load_test_cartridge_into_memory(&cartridge);
+}
+
+void eval_AND()
+{
+    CPU expected = {
+        .r0 = 7,
+        .r1 = 2,
+        .cpsr = 0,
+    };
+
+    printf("r0 = %d, expected = %d\n", cpu.r0, expected.r0);
+    printf("r1 = %d, expected = %d\n", cpu.r1, expected.r1);
+    printf("cpsr = %d, expected = %d\n", cpu.cpsr, expected.cpsr);
+}
+
+void run_tests()
+{
+    // init_gba();
+    // init_B();
+    // process_instructions();
+    // eval_B();
+
+
+    // TODO: replicate the above test with this instructions and try to come up with a framework to add the remaining instruction.
+    init_gba();
+    init_AND();
+    process_instructions();
+    eval_AND();
+}
+
+/*
+Do something like this:
+TestDefinition test = {
+    .cartridge = 
+    .init = init_B,
+
+};
+
+DEFINE_TEST(test_B, test_B);
+*/
+
+
+int main(int argc, char *argv[])
+{
+#if 1
     char *filename = "Donkey Kong Country 2.gba";
     int error = load_cartridge_into_memory(filename);
     if (error) {
@@ -1502,12 +1631,18 @@ int main()
         }
     }
     
-    CartridgeHeader *header = (CartridgeHeader *)memory.game_pak_rom;
-    printf("fixed_value = 0x%x, expected = 0x96\n", header->fixed_value);
+    // CartridgeHeader *header = (CartridgeHeader *)memory.game_pak_rom;
+    // printf("fixed_value = 0x%x, expected = 0x96\n", header->fixed_value);
 
     process_instructions();
 
     print_cpu_state();
+#else
+// #include "test_B.c"
+    init_gba();
+
+    run_tests();
+#endif
 
     return 0;
 }
