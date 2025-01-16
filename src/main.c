@@ -503,66 +503,36 @@ process_psr_transfer()
 }
 
 static void
-execute()
+process_multiply()
 {
-    if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
-    if (!should_execute_instruction(decoded_instruction.condition)) {
-        // printf("Condition %d...Skipped\n", decoded_instruction.condition);
-        goto exit_execute;
-    }
-
-#if 1
-    InstructionCategory category = instruction_categories[decoded_instruction.type];
-    switch (category) {
-        case INSTRUCTION_CATEGORY_BRANCH: {
-            process_branch();
-        } break;
-        case INSTRUCTION_CATEGORY_DATA_PROCESSING: {
-            process_data_processing();
-        } break;
-        case INSTRUCTION_CATEGORY_PSR_TRANSFER: {
-            process_psr_transfer();
-        } break;
-        case INSTRUCTION_CATEGORY_MULTIPLY: {
-            
-        } break;
-        
-#ifdef _DEBUG
-        case INSTRUCTION_CATEGORY_DEBUG: {
-            if (decoded_instruction.type == INSTRUCTION_DEBUG_EXIT) {
-                is_running = false;
-            }
-        }
-#endif
-    }
-#else
     switch (decoded_instruction.type) {
-        
-        
-
-        // Multiply
         case INSTRUCTION_MUL: {
             DEBUG_PRINT("INSTRUCTION_MUL\n");
-            
+
             assert(!"Implement");
         } break;
         case INSTRUCTION_MLA: {
             DEBUG_PRINT("INSTRUCTION_MLA\n");
-            
+
             assert(!"Implement");
         } break;
         case INSTRUCTION_MULL: {
             DEBUG_PRINT("INSTRUCTION_MULL\n");
-            
+
             assert(!"Implement");
         } break;
         case INSTRUCTION_MLAL: {
             DEBUG_PRINT("INSTRUCTION_MLAL\n");
-            
+
             assert(!"Implement");
         } break;
 
-        // Single Data Transfer
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
+
 #define UPDATE_BASE_OFFSET()            \
     do {                                \
         if (decoded_instruction.U) {    \
@@ -572,14 +542,18 @@ execute()
         }                               \
     } while (0)
 
+static void
+process_single_data_transfer()
+{
+    switch (decoded_instruction.type) {
         case INSTRUCTION_LDR: {
             DEBUG_PRINT("INSTRUCTION_LDR\n");
-            
+
             assert(!"Implement");
         } break;
         case INSTRUCTION_STR: {
             DEBUG_PRINT("INSTRUCTION_STR\n");
-            
+
             u32 base = cpu.r[decoded_instruction.rn];
             u16 offset;
 
@@ -601,7 +575,7 @@ execute()
             } else {
                 offset = (u16)decoded_instruction.offset;
             }
-            
+
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
                 u8 *address = get_memory_region_at(base);
@@ -632,36 +606,44 @@ execute()
 
         } break;
 
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
 
-
+static void
+process_halfword_and_signed_data_transfer()
+{
+    switch (decoded_instruction.type) {
         // Halfword and signed data transfer
         case INSTRUCTION_LDRH_IMM: {
             DEBUG_PRINT("INSTRUCTION_LDRH_IMM\n");
-            
+
             assert(!"Implement");
         } break;
         case INSTRUCTION_STRH_IMM: {
             DEBUG_PRINT("INSTRUCTION_STRH_IMM\n");
-            
+
             assert(!"Implement");
         } break;
         case INSTRUCTION_LDRSB_IMM: {
             DEBUG_PRINT("INSTRUCTION_LDRSB_IMM\n");
-            
+
             assert(!"Implement");
         } break;
         case INSTRUCTION_LDRSH_IMM: {
             DEBUG_PRINT("INSTRUCTION_LDRSH_IMM\n");
-            
+
             assert(!"Implement");
         } break;
-        
+
         case INSTRUCTION_LDRH: {
             DEBUG_PRINT("INSTRUCTION_LDRH\n");
 
             int base = cpu.r[decoded_instruction.rn];
             int offset = cpu.r[decoded_instruction.rm];
-            
+
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
@@ -684,10 +666,10 @@ execute()
         } break;
         case INSTRUCTION_STRH: {
             DEBUG_PRINT("INSTRUCTION_STRH\n");
-            
+
             int base = cpu.r[decoded_instruction.rn];
             int offset = cpu.r[decoded_instruction.rm];
-            
+
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
@@ -710,10 +692,10 @@ execute()
         } break;
         case INSTRUCTION_LDRSB: {
             DEBUG_PRINT("INSTRUCTION_LDRSB\n");
-            
+
             int base = cpu.r[decoded_instruction.rn];
             int offset = cpu.r[decoded_instruction.rm];
-            
+
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
@@ -744,10 +726,10 @@ execute()
         } break;
         case INSTRUCTION_LDRSH: {
             DEBUG_PRINT("INSTRUCTION_LDRSH\n");
-            
+
             int base = cpu.r[decoded_instruction.rn];
             int offset = cpu.r[decoded_instruction.rm];
-            
+
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
@@ -758,7 +740,7 @@ execute()
                 u32 value_sign_extended = (((u32)-sign) << 16) | value;
 
                 cpu.r[decoded_instruction.rd] = value_sign_extended;
-                
+
                 if (decoded_instruction.W) {
                     cpu.r[decoded_instruction.rn] = base;
                 }
@@ -774,13 +756,22 @@ execute()
                 UPDATE_BASE_OFFSET();
                 cpu.r[decoded_instruction.rn] = base;
             }
-            
+
         } break;
+
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
 
 #undef UPDATE_BASE_OFFSET
 
 
-        // Block Data Transfer
+static void
+process_block_data_transfer()
+{
+    switch (decoded_instruction.type) {
         case INSTRUCTION_LDM: {
             s32 base_address = cpu.r[decoded_instruction.rn];
             u16 register_list = decoded_instruction.register_list;
@@ -792,7 +783,7 @@ execute()
                     if (register_index_set) {
                         if (decoded_instruction.P) {
                             base_address++;
-                            
+
                             u32 *address = (u32 *)get_memory_region_at(base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
@@ -800,7 +791,7 @@ execute()
                             u32 *address = (u32 *)get_memory_region_at(base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
-                            
+
                             base_address++;
                         }
                     }
@@ -813,7 +804,7 @@ execute()
                     if (register_index_set) {
                         if (decoded_instruction.P) {
                             base_address--;
-                            
+
                             u32 *address = (u32 *)get_memory_region_at(base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
@@ -829,7 +820,7 @@ execute()
                     register_index--;
                     register_list <<= 1;
                 }
-                
+
             }
 
             if (decoded_instruction.W) {
@@ -839,7 +830,7 @@ execute()
 
         case INSTRUCTION_STM: {
             DEBUG_PRINT("INSTRUCTION_STM\n");
-            
+
             u32 base_address = cpu.r[decoded_instruction.rn];
             u16 register_list = decoded_instruction.register_list;
             int register_index = (decoded_instruction.U) ? 0 : 15;
@@ -850,7 +841,7 @@ execute()
                     if (register_index_set) {
                         if (decoded_instruction.P) {
                             base_address += 4;
-                            
+
                             u32 *address = (u32 *)get_memory_region_at(base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
@@ -858,7 +849,7 @@ execute()
                             u32 *address = (u32 *)get_memory_region_at(base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
-                            
+
                             base_address += 4;
                         }
                     }
@@ -871,7 +862,7 @@ execute()
                     if (register_index_set) {
                         if (decoded_instruction.P) {
                             base_address -= 4;
-                            
+
                             u32 *address = (u32 *)get_memory_region_at(base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
@@ -879,7 +870,7 @@ execute()
                             u32 *address = (u32 *)get_memory_region_at(base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
-                            
+
                             base_address -= 4;
                         }
                     }
@@ -887,7 +878,7 @@ execute()
                     register_index--;
                     register_list <<= 1;
                 }
-                
+
             }
 
             if (decoded_instruction.W) {
@@ -895,60 +886,164 @@ execute()
             }
         } break;
 
-#undef INCREMENT_DECREMENT_BASE_ADDRESS
-
-
-        // Single Data Swap
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
+static void
+process_single_data_swap()
+{
+    switch (decoded_instruction.type) {
         case INSTRUCTION_SWP: {
             DEBUG_PRINT("INSTRUCTION_SWP\n");
-            
+
             assert(!"Implement");
         } break;
 
-        // Software Interrupt
+
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
+
+static void
+process_software_interrupt()
+{
+    switch (decoded_instruction.type) {
         case INSTRUCTION_SWI: {
             DEBUG_PRINT("INSTRUCTION_SWI\n");
-            
+
             assert(!"Implement");
         } break;
 
-        // Coprocessor Data Operations
+
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
+
+static void
+process_coprocessor_data_operations()
+{
+    switch (decoded_instruction.type) {
         case INSTRUCTION_CDP: {
             DEBUG_PRINT("INSTRUCTION_CDP... Not implemented for now\n");
-            
+
             // assert(!"Implement");
         } break;
 
-        // Coprocessor Data Transfers
+
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
+
+static void
+process_coprocessor_data_transfers()
+{
+    switch (decoded_instruction.type) {
         case INSTRUCTION_STC: {
             DEBUG_PRINT("INSTRUCTION_STC\n");
-            
+
             assert(!"Implement");
         } break;
         case INSTRUCTION_LDC: {
             DEBUG_PRINT("INSTRUCTION_LDC\n");
-            
+
             assert(!"Implement");
         } break;
 
-        // Coprocessor Register Transfers
+
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
+
+static void
+process_coprocessor_register_transfers()
+{
+    switch (decoded_instruction.type) {
         case INSTRUCTION_MCR: {
             DEBUG_PRINT("INSTRUCTION_MCR\n");
-            
+
             assert(!"Implement");
         } break;
         case INSTRUCTION_MRC: {
             DEBUG_PRINT("INSTRUCTION_MRC\n");
-            
+
             assert(!"Implement");
         } break;
 
 
-        case INSTRUCTION_DEBUG_EXIT: {
-            is_running = false;
+        default: {
+            assert(!"Invalid instruction type for category");
         }
     }
-#endif
+}
+
+
+static void
+execute()
+{
+    if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
+    if (!should_execute_instruction(decoded_instruction.condition)) {
+        // printf("Condition %d...Skipped\n", decoded_instruction.condition);
+        goto exit_execute;
+    }
+
+    InstructionCategory category = instruction_categories[decoded_instruction.type];
+    switch (category) {
+        case INSTRUCTION_CATEGORY_BRANCH: {
+            process_branch();
+        } break;
+        case INSTRUCTION_CATEGORY_DATA_PROCESSING: {
+            process_data_processing();
+        } break;
+        case INSTRUCTION_CATEGORY_PSR_TRANSFER: {
+            process_psr_transfer();
+        } break;
+        case INSTRUCTION_CATEGORY_MULTIPLY: {
+            process_multiply();
+        } break;
+        case INSTRUCTION_CATEGORY_SINGLE_DATA_TRANSFER: {
+            process_single_data_transfer();
+        } break;
+        case INSTRUCTION_CATEGORY_HALFWORD_AND_SIGNED_DATA_TRANSFER: {
+            process_halfword_and_signed_data_transfer();
+        } break;
+        case INSTRUCTION_CATEGORY_BLOCK_DATA_TRANSFER: {
+            process_block_data_transfer();
+        } break;
+        case INSTRUCTION_CATEGORY_SINGLE_DATA_SWAP: {
+            process_single_data_swap();
+        } break;
+        case INSTRUCTION_CATEGORY_SOFTWARE_INTERRUPT: {
+            process_software_interrupt();
+        } break;
+        case INSTRUCTION_CATEGORY_COPROCESSOR_DATA_OPERATIONS: {
+            process_coprocessor_data_operations();
+        } break;
+        case INSTRUCTION_CATEGORY_COPROCESSOR_DATA_TRANSFERS: {
+            process_coprocessor_data_transfers();
+        } break;
+        case INSTRUCTION_CATEGORY_COPROCESSOR_REGISTER_TRANSFERS: {
+            process_coprocessor_register_transfers();
+        } break;
+        
+#ifdef _DEBUG
+        case INSTRUCTION_CATEGORY_DEBUG: {
+            if (decoded_instruction.type == INSTRUCTION_DEBUG_EXIT) {
+                is_running = false;
+            }
+        }
+#endif // _DEBUG
+    }
+
 exit_execute:
     decoded_instruction = (Instruction){0};
 }
@@ -1519,7 +1614,7 @@ DEFINE_TEST(test_B, test_B);
 
 int main(int argc, char *argv[])
 {
-#if 0
+#if 1
     char *filename = "Donkey Kong Country 2.gba";
     int error = load_cartridge_into_memory(filename);
     if (error) {
