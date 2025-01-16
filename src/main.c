@@ -93,38 +93,6 @@ set_condition_N(u8 bit)
 
 GBAMemory memory = {0};
 
-static u8 *
-get_memory_region_at(u32 at)
-{
-    // General Internal Memory
-    if (at <= 0x00003FFF) return (memory.bios_system_rom + (at - 0x00000000));
-    if (at <= 0x01FFFFFF) assert(!"Invalid memory");
-    if (at <= 0x0203FFFF) return (memory.ewram + (at - 0x02000000));
-    if (at <= 0x02FFFFFF) assert(!"Invalid memory");
-    if (at <= 0x03007FFF) return (memory.iwram + (at - 0x03000000));
-    if (at <= 0x03FFFFFF) assert(!"Invalid memory");
-    if (at <= 0x040003FE) return (memory.io_registers + (at - 0x04000000));
-    if (at <= 0x04FFFFFF) assert(!"Invalid memory");
-
-    // Internal Display Memory
-    if (at <= 0x050003FF) return (memory.bg_obj_palette_ram + (at - 0x05000000));
-    if (at <= 0x05FFFFFF) assert(!"Invalid memory");
-    if (at <= 0x06017FFF) return (memory.vram + (at - 0x06000000));
-    if (at <= 0x06FFFFFF) assert(!"Invalid memory");
-    if (at <= 0x070003FF) return (memory.oam_obj_attributes + (at - 0x07000000));
-    if (at <= 0x07FFFFFF) assert(!"Invalid memory");
-
-    // External Memory (Game Pak)
-    if (at <= 0x09FFFFFF) return (memory.game_pak_rom + (at - 0x08000000));
-    if (at <= 0x0BFFFFFF) assert(!"game_pak Wait State 1 not handled");
-    if (at <= 0x0DFFFFFF) assert(!"game_pak Wait State 2 not handled");
-    if (at <= 0x0E00FFFF) return (memory.game_pak_ram + (at - 0x0E000000));
-
-
-    assert(!"Invalid memory");
-    return 0;
-}
-
 
 static int
 load_cartridge_into_memory(char *filename)
@@ -151,6 +119,8 @@ init_gba()
 {
     memset(&cpu, 0, sizeof(CPU));
     memset(&memory, 0, sizeof(GBAMemory));
+
+    cpu.pc = 0x08000000;
 }
 
 /*
@@ -273,7 +243,28 @@ should_execute_instruction(Condition condition)
     }
 }
 
-static int
+static void
+process_branch()
+{
+    switch (decoded_instruction.type) {
+        case INSTRUCTION_B: {
+            DEBUG_PRINT("INSTRUCTION_B\n");
+
+            if (decoded_instruction.L) {
+                cpu.lr = cpu.pc - 1;
+            }
+
+            cpu.pc += (decoded_instruction.offset << 2);
+            current_instruction = 0;
+        } break;
+
+        default: {
+            assert(!"Invalid instruction type for category");
+        }
+    }
+}
+
+static u32
 apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
 {
     switch (shift_type) {
@@ -309,50 +300,35 @@ apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
 }
 
 static void
-process_branch()
-{
-    switch (decoded_instruction.type) {
-        case INSTRUCTION_B: {
-            DEBUG_PRINT("INSTRUCTION_B\n");
-
-            if (decoded_instruction.L) {
-                cpu.lr = cpu.pc - 1;
-            }
-
-            cpu.pc += (decoded_instruction.offset << 2);
-            current_instruction = 0;
-        } break;
-
-        default: {
-            assert(!"Invalid instruction type for category");
-        }
-    }
-}
-
-static void
 process_data_processing()
 {
     u8 carry = 0;
-    int second_operand;
+    u32 second_operand;
+    ShiftType shift_type;
+    u32 shift_value = 0;
     if (decoded_instruction.I) {
         u8 imm = decoded_instruction.second_operand & 0xFF;
         u32 rotate = (decoded_instruction.second_operand >> 8) & 0xF;
         // NOTE: This value is zero extended to 32 bits, and then subject to a rotate right by twice the value in the rotate field.
         rotate *= 2;
 
-        second_operand = apply_shift(imm, rotate, SHIFT_TYPE_ROTATE_RIGHT, &carry);
+        shift_type = SHIFT_TYPE_ROTATE_RIGHT;
+        shift_value = rotate;
+
+        second_operand = apply_shift(imm, rotate, shift_type, &carry);
     } else {
         int rm = decoded_instruction.second_operand & 0xF;
         u8 shift = (decoded_instruction.second_operand >> 4) & 0xFF;
-        u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
+        shift_type = (ShiftType)((shift >> 1) & 0b11);
         if (shift & 1) {
             // Shift register
             u8 rs = (shift >> 4) & 0xF; // Register to the value to shift.
-            second_operand = apply_shift(cpu.r[rm], (u8)(cpu.r[rs] & 0xF), shift_type, &carry);
+            shift_value = (u8)(cpu.r[rs] & 0xF);
+            second_operand = apply_shift(cpu.r[rm], shift_value, shift_type, &carry);
         } else {
             // Shift amount
-            u8 shift_amount = (shift >> 3) & 0b11111;
-            second_operand = apply_shift(cpu.r[rm], shift_amount, shift_type, &carry);
+            shift_value = (shift >> 3) & 0b11111;
+            second_operand = apply_shift(cpu.r[rm], shift_value, shift_type, &carry);
         }
     }
 
@@ -464,16 +440,23 @@ process_data_processing()
     }
 
     if (decoded_instruction.S && decoded_instruction.rd != 15) {
-        /*if (decoded_instruction.I == 0) {
-            u8 rs = (shift >> 4) & 0xF;
-            if (((u8)cpu.r[rs] & 0xF) == 0) {
-                carry = CONDITION_C;
+        if (data_processing_types[decoded_instruction.type] == DATA_PROCESSING_LOGICAL) {
+            if (shift_type == SHIFT_TYPE_LOGICAL_LEFT && shift_value == 0) {
+                // NOTE: the C flag will be set to the carry out from the barrel shifter (or preserved when the shift operation is LSL #0).
+            } else {
+                set_condition_C(carry);
             }
-        } */
 
-        set_condition_C(carry != 0);
-        set_condition_Z(result == 0);
-        set_condition_N(result >> 31);
+            set_condition_Z(result == 0);
+            set_condition_N(result >> 31);
+        } else {
+            u8 overflow = (result < second_operand) ? 1 : 0;
+
+            set_condition_V(overflow);
+            set_condition_C(carry);
+            set_condition_Z(result == 0);
+            set_condition_N(result >> 31);
+        }
     }
     
     if (store_result) {
@@ -578,7 +561,7 @@ process_single_data_transfer()
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
-                u8 *address = get_memory_region_at(base);
+                u8 *address = get_memory_at(&memory, base);
 
                 // Store data
                 if (decoded_instruction.B) {
@@ -591,7 +574,7 @@ process_single_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *address = get_memory_region_at(base);
+                u8 *address = get_memory_at(&memory, base);
 
                 // Store data
                 if (decoded_instruction.B) {
@@ -647,7 +630,7 @@ process_halfword_and_signed_data_transfer()
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
-                u8 *address = get_memory_region_at(base);
+                u8 *address = get_memory_at(&memory, base);
                 // u8 *address = memory.iwram + base;
                 cpu.r[decoded_instruction.rd] = *((u16 *)address);
 
@@ -655,7 +638,7 @@ process_halfword_and_signed_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *address = get_memory_region_at(base);
+                u8 *address = get_memory_at(&memory, base);
                 // u8 *address = memory.iwram + base;
                 cpu.r[decoded_instruction.rd] = *((u16 *)address);
 
@@ -673,7 +656,7 @@ process_halfword_and_signed_data_transfer()
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
-                u8 *address = get_memory_region_at(base);
+                u8 *address = get_memory_at(&memory, base);
                 // u8 *address = memory.iwram + base;
                 *((u16 *)address) = (u16)cpu.r[decoded_instruction.rd];
 
@@ -681,7 +664,7 @@ process_halfword_and_signed_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *address = get_memory_region_at(base);
+                u8 *address = get_memory_at(&memory, base);
                 // u8 *address = memory.iwram + base;
                 *((u16 *)address) = (u16)cpu.r[decoded_instruction.rd];
 
@@ -699,7 +682,7 @@ process_halfword_and_signed_data_transfer()
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
-                u8 *memory_region = get_memory_region_at(base);
+                u8 *memory_region = get_memory_at(&memory, base);
                 // u8 *memory_region = memory.iwram + base;
                 u8 value = *memory_region;
                 u8 sign = (value >> 7) & 1;
@@ -711,7 +694,7 @@ process_halfword_and_signed_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *memory_region = get_memory_region_at(base);
+                u8 *memory_region = get_memory_at(&memory, base);
                 // u8 *memory_region = memory.iwram + base;
                 u8 value = *memory_region;
                 u8 sign = (value >> 7) & 1;
@@ -733,7 +716,7 @@ process_halfword_and_signed_data_transfer()
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
-                u8 *memory_region = get_memory_region_at(base);
+                u8 *memory_region = get_memory_at(&memory, base);
                 // u8 *memory_region = memory.iwram + base;
                 u16 value = *((u16 *)memory_region);
                 u8 sign = (value >> 15) & 1;
@@ -745,7 +728,7 @@ process_halfword_and_signed_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *memory_region = get_memory_region_at(base);
+                u8 *memory_region = get_memory_at(&memory, base);
                 // u8 *memory_region = memory.iwram + base;
                 u16 value = *((u16 *)memory_region);
                 u8 sign = (value >> 15) & 1;
@@ -784,11 +767,11 @@ process_block_data_transfer()
                         if (decoded_instruction.P) {
                             base_address++;
 
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
                         } else {
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
 
@@ -805,11 +788,11 @@ process_block_data_transfer()
                         if (decoded_instruction.P) {
                             base_address--;
 
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
                         } else {
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
 
@@ -842,11 +825,11 @@ process_block_data_transfer()
                         if (decoded_instruction.P) {
                             base_address += 4;
 
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
                         } else {
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
 
@@ -863,11 +846,11 @@ process_block_data_transfer()
                         if (decoded_instruction.P) {
                             base_address -= 4;
 
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
                         } else {
-                            u32 *address = (u32 *)get_memory_region_at(base_address);
+                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
 
@@ -991,6 +974,10 @@ static void
 execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
+    if (decoded_instruction.type == INSTRUCTION_UNKNOWN) {
+        assert(!"Invalid instruction");
+    }
+
     if (!should_execute_instruction(decoded_instruction.condition)) {
         // printf("Condition %d...Skipped\n", decoded_instruction.condition);
         goto exit_execute;
@@ -1040,7 +1027,7 @@ execute()
             if (decoded_instruction.type == INSTRUCTION_DEBUG_EXIT) {
                 is_running = false;
             }
-        }
+        } break;
 #endif // _DEBUG
     }
 
@@ -1053,6 +1040,12 @@ static void
 decode()
 {
     if (current_instruction == 0) return;
+
+    // If none of the if's below match, this will be the current instruction. This could not happen.
+    decoded_instruction = (Instruction) {
+        .type = INSTRUCTION_UNKNOWN,
+    };
+
 
     if ((current_instruction & INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
         // printf("INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT: 0x%x\n", current_instruction);
@@ -1074,8 +1067,8 @@ decode()
         u8 L = (current_instruction >> 20) & 1;
         InstructionType type = 0;
         switch (L) {
-            case 0: INSTRUCTION_MCR; break;
-            case 1: INSTRUCTION_MRC; break;
+            case 0: type = INSTRUCTION_MCR; break;
+            case 1: type = INSTRUCTION_MRC; break;
         }
 
         decoded_instruction = (Instruction) {
@@ -1097,8 +1090,8 @@ decode()
         u8 L = (current_instruction >> 20) & 1;
         InstructionType type = 0;
         switch (L) {
-            case 0: INSTRUCTION_STC; break;
-            case 1: INSTRUCTION_LDC; break;
+            case 0: type = INSTRUCTION_STC; break;
+            case 1: type = INSTRUCTION_LDC; break;
         }
 
         decoded_instruction = (Instruction) {
@@ -1391,7 +1384,8 @@ SWP:
 static void
 fetch()
 {
-    current_instruction = ((u32 *)memory.game_pak_rom)[cpu.pc++];
+    current_instruction = *(u32 *)get_memory_at(&memory, cpu.pc);
+    cpu.pc += 4;
 }
 
 static void
@@ -1615,6 +1609,8 @@ DEFINE_TEST(test_B, test_B);
 int main(int argc, char *argv[])
 {
 #if 1
+    init_gba();
+    
     char *filename = "Donkey Kong Country 2.gba";
     int error = load_cartridge_into_memory(filename);
     if (error) {

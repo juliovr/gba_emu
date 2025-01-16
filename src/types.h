@@ -85,6 +85,39 @@ typedef struct GBAMemory {
 } GBAMemory;
 
 
+u8 *
+get_memory_at(GBAMemory *gba_memory, u32 at)
+{
+    // General Internal Memory
+    if (at <= 0x00003FFF) return (gba_memory->bios_system_rom + (at - 0x00000000));
+    if (at <= 0x01FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x0203FFFF) return (gba_memory->ewram + (at - 0x02000000));
+    if (at <= 0x02FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x03007FFF) return (gba_memory->iwram + (at - 0x03000000));
+    if (at <= 0x03FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x040003FE) return (gba_memory->io_registers + (at - 0x04000000));
+    if (at <= 0x04FFFFFF) assert(!"Invalid memory");
+
+    // Internal Display Memory
+    if (at <= 0x050003FF) return (gba_memory->bg_obj_palette_ram + (at - 0x05000000));
+    if (at <= 0x05FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x06017FFF) return (gba_memory->vram + (at - 0x06000000));
+    if (at <= 0x06FFFFFF) assert(!"Invalid memory");
+    if (at <= 0x070003FF) return (gba_memory->oam_obj_attributes + (at - 0x07000000));
+    if (at <= 0x07FFFFFF) assert(!"Invalid memory");
+
+    // External Memory (Game Pak)
+    if (at <= 0x09FFFFFF) return (gba_memory->game_pak_rom + (at - 0x08000000));
+    if (at <= 0x0BFFFFFF) assert(!"game_pak Wait State 1 not handled");
+    if (at <= 0x0DFFFFFF) assert(!"game_pak Wait State 2 not handled");
+    if (at <= 0x0E00FFFF) return (gba_memory->game_pak_ram + (at - 0x0E000000));
+
+
+    assert(!"Invalid memory");
+    return 0;
+}
+
+
 #define INSTRUCTION_FORMAT_DATA_PROCESSING                              (0)
 #define INSTRUCTION_FORMAT_MULTIPLY                                     (0b0000000000000000000010010000)
 #define INSTRUCTION_FORMAT_MULTIPLY_LONG                                (0b0000100000000000000010010000)
@@ -129,6 +162,8 @@ typedef enum Condition {
 
 typedef enum InstructionType {
     INSTRUCTION_NONE,
+
+    INSTRUCTION_UNKNOWN,
 
     // Branch
     INSTRUCTION_B,
@@ -202,6 +237,30 @@ typedef enum InstructionType {
     
     INSTRUCTION_DEBUG_EXIT,
 } InstructionType;
+
+typedef enum DataProcessingTypes {
+    DATA_PROCESSING_LOGICAL,
+    DATA_PROCESSING_ARITHMETIC,
+} DataProcessingTypes;
+
+InstructionType data_processing_types[] = {
+    [INSTRUCTION_AND] = DATA_PROCESSING_LOGICAL,
+    [INSTRUCTION_EOR] = DATA_PROCESSING_LOGICAL,
+    [INSTRUCTION_SUB] = DATA_PROCESSING_ARITHMETIC,
+    [INSTRUCTION_RSB] = DATA_PROCESSING_ARITHMETIC,
+    [INSTRUCTION_ADD] = DATA_PROCESSING_ARITHMETIC,
+    [INSTRUCTION_ADC] = DATA_PROCESSING_ARITHMETIC,
+    [INSTRUCTION_SBC] = DATA_PROCESSING_ARITHMETIC,
+    [INSTRUCTION_RSC] = DATA_PROCESSING_ARITHMETIC,
+    [INSTRUCTION_TST] = DATA_PROCESSING_LOGICAL,
+    [INSTRUCTION_TEQ] = DATA_PROCESSING_LOGICAL,
+    [INSTRUCTION_CMP] = DATA_PROCESSING_ARITHMETIC,
+    [INSTRUCTION_CMN] = DATA_PROCESSING_ARITHMETIC,
+    [INSTRUCTION_ORR] = DATA_PROCESSING_LOGICAL,
+    [INSTRUCTION_MOV] = DATA_PROCESSING_LOGICAL,
+    [INSTRUCTION_BIC] = DATA_PROCESSING_LOGICAL,
+    [INSTRUCTION_MVN] = DATA_PROCESSING_LOGICAL,
+};
 
 typedef enum InstructionCategory {
     INSTRUCTION_CATEGORY_BRANCH,
