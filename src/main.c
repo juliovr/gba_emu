@@ -61,7 +61,7 @@ print_cpu_state()
     if ((cpu.cpsr >> 5) & 1) printf("T"); else printf("-");
 
     printf("\n");
-    printf("  Mode: ");
+    printf("  Mode: %s: ", psr_mode[cpu.cpsr & 0b11111]);
     if ((cpu.cpsr >> 4) & 1) printf("1"); else printf("0");
     if ((cpu.cpsr >> 3) & 1) printf("1"); else printf("0");
     if ((cpu.cpsr >> 2) & 1) printf("1"); else printf("0");

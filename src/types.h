@@ -51,6 +51,15 @@ typedef struct CPU {
     // TODO: how to store the banked registers.
 } CPU;
 
+char *psr_mode[] = {
+    [0b10000] = "USER",
+    [0b10001] = "FIQ",
+    [0b10010] = "IRQ",
+    [0b10011] = "SUPERVISOR",
+    [0b10111] = "ABORT",
+    [0b11011] = "UNDEFINED",
+    [0b11111] = "SYSTEM",
+};
 
 // TODO: is it necessary to make fields for the "Not used" data to make the load simpler?
 typedef struct GBAMemory {
