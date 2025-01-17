@@ -471,7 +471,13 @@ process_psr_transfer()
         case INSTRUCTION_MRS: {
             DEBUG_PRINT("INSTRUCTION_MRS\n");
             
-            assert(!"Implement");
+            u32 sr = cpu.cpsr;
+            if (decoded_instruction.P) {
+                assert(!"SPSR not supported right now");
+                // TODO: set sr = cpu.spsr_<mode>, something like this
+            }
+
+            cpu.r[decoded_instruction.rd] = sr;
         } break;
         case INSTRUCTION_MSR: {
             DEBUG_PRINT("INSTRUCTION_MSR\n");
