@@ -36,17 +36,40 @@ num_to_binary_32(char *buffer, u32 num)
 static void
 print_cpu_state()
 {
+    printf("----------------\n");
     printf("Registers:\n");
     for (int i = 0; i < 16; i++) {
         printf("    r[%d] = %d\n", i, cpu.r[i]);
     }
     printf("----------------\n");
-    printf("PC = %d\n", cpu.pc);
+    printf("PC = 0x%x\n", cpu.pc);
 
     char cpsr_buffer[33];
     num_to_binary_32(cpsr_buffer, cpu.cpsr);
     printf("%s\n", cpsr_buffer);
+
+    printf("Condition flags: ");
+    if ((cpu.cpsr >> 31) & 1) printf("N"); else printf("-");
+    if ((cpu.cpsr >> 30) & 1) printf("Z"); else printf("-");
+    if ((cpu.cpsr >> 29) & 1) printf("C"); else printf("-");
+    if ((cpu.cpsr >> 28) & 1) printf("V"); else printf("-");
     
+    printf("\n");
+    printf("Control bits: ");
+    if ((cpu.cpsr >> 7) & 1) printf("I"); else printf("-");
+    if ((cpu.cpsr >> 6) & 1) printf("F"); else printf("-");
+    if ((cpu.cpsr >> 5) & 1) printf("T"); else printf("-");
+
+    printf("\n");
+    printf("  Mode: ");
+    if ((cpu.cpsr >> 4) & 1) printf("1"); else printf("0");
+    if ((cpu.cpsr >> 3) & 1) printf("1"); else printf("0");
+    if ((cpu.cpsr >> 2) & 1) printf("1"); else printf("0");
+    if ((cpu.cpsr >> 1) & 1) printf("1"); else printf("0");
+    if ((cpu.cpsr >> 0) & 1) printf("1"); else printf("0");
+
+
+    printf("\n");
     printf("----------------\n");
 }
 
@@ -258,7 +281,12 @@ process_branch()
             current_instruction = 0;
         } break;
 
+        // case INSTRUCTION_BX: {
+
+        // } break;
+
         default: {
+            print_cpu_state();
             assert(!"Invalid instruction type for category");
         }
     }
