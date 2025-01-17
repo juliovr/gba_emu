@@ -552,36 +552,32 @@ process_multiply()
 static void
 process_single_data_transfer()
 {
+    u32 base = cpu.r[decoded_instruction.rn];
+    u16 offset;
+
+    if (decoded_instruction.I) {
+        u8 carry;
+        u32 offset_register = cpu.r[decoded_instruction.offset & 0xF];
+        u8 shift = (decoded_instruction.offset >> 4) & 0xFF;
+        u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
+        if (shift & 1) {
+            // Shift register
+            u8 rs = (shift >> 4) & 0xF ; // Register to the value to shift.
+            offset = (u16)apply_shift(offset_register, (u8)(cpu.r[rs] & 0xF), shift_type, &carry);
+        } else {
+            // Shift amount
+            u8 shift_amount = (shift >> 3) & 0b11111;
+            offset = (u16)apply_shift(offset_register, shift_amount, shift_type, &carry);
+        }
+
+    } else {
+        offset = (u16)decoded_instruction.offset;
+    }
+    
     switch (decoded_instruction.type) {
         case INSTRUCTION_LDR: {
             DEBUG_PRINT("INSTRUCTION_LDR\n");
-
-            assert(!"Implement");
-        } break;
-        case INSTRUCTION_STR: {
-            DEBUG_PRINT("INSTRUCTION_STR\n");
-
-            u32 base = cpu.r[decoded_instruction.rn];
-            u16 offset;
-
-            if (decoded_instruction.I) {
-                u8 carry;
-                u32 offset_register = cpu.r[decoded_instruction.offset & 0xF];
-                u8 shift = (decoded_instruction.offset >> 4) & 0xFF;
-                u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
-                if (shift & 1) {
-                    // Shift register
-                    u8 rs = (shift >> 4) & 0xF ; // Register to the value to shift.
-                    offset = (u16)apply_shift(offset_register, (u8)(cpu.r[rs] & 0xF), shift_type, &carry);
-                } else {
-                    // Shift amount
-                    u8 shift_amount = (shift >> 3) & 0b11111;
-                    offset = (u16)apply_shift(offset_register, shift_amount, shift_type, &carry);
-                }
-
-            } else {
-                offset = (u16)decoded_instruction.offset;
-            }
+            // TODO: check the un-align load (offset by 2)
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
@@ -605,6 +601,38 @@ process_single_data_transfer()
                     cpu.r[decoded_instruction.rd] = *((u8 *)((u32 *)address));
                 } else {
                     cpu.r[decoded_instruction.rd] = *((u32 *)address);
+                }
+
+                UPDATE_BASE_OFFSET();
+                cpu.r[decoded_instruction.rn] = base;
+            }
+            
+        } break;
+        case INSTRUCTION_STR: {
+            DEBUG_PRINT("INSTRUCTION_STR\n");
+
+            if (decoded_instruction.P) {
+                UPDATE_BASE_OFFSET();
+                u8 *address = get_memory_at(&memory, base);
+
+                // Store data
+                if (decoded_instruction.B) {
+                    *((u32 *)address) = (u8)cpu.r[decoded_instruction.rd];
+                } else {
+                    *((u32 *)address) = cpu.r[decoded_instruction.rd];
+                }
+
+                if (decoded_instruction.W) {
+                    cpu.r[decoded_instruction.rn] = base;
+                }
+            } else {
+                u8 *address = get_memory_at(&memory, base);
+
+                // Store data
+                if (decoded_instruction.B) {
+                    *((u32 *)address) = (u8)cpu.r[decoded_instruction.rd];
+                } else {
+                    *((u32 *)address) = cpu.r[decoded_instruction.rd];
                 }
 
                 UPDATE_BASE_OFFSET();
