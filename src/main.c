@@ -475,8 +475,26 @@ process_psr_transfer()
         } break;
         case INSTRUCTION_MSR: {
             DEBUG_PRINT("INSTRUCTION_MSR\n");
-            
-            assert(!"Implement");
+
+            u32 *sr = &cpu.cpsr;
+            if (decoded_instruction.P) {
+                assert(!"SPSR not supported right now");
+                // TODO: set sr = &cpu.spsr_<mode>, something like this
+            }
+
+            if (decoded_instruction.I) {
+                u8 carry = 0;
+                
+                u8 imm = decoded_instruction.source_operand & 0xFF;
+                u32 rotate = (decoded_instruction.source_operand >> 8) & 0xF;
+                // NOTE: This value is zero extended to 32 bits, and then subject to a rotate right by twice the value in the rotate field.
+                rotate *= 2;
+
+                u32 value = apply_shift(imm, rotate, SHIFT_TYPE_ROTATE_RIGHT, &carry);
+                *sr = value;
+            } else {
+                *sr = cpu.r[decoded_instruction.rm];
+            }
         } break;
 
         default: {
