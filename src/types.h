@@ -18,6 +18,20 @@ typedef int32_t  s32;
 #define false 0
 typedef int bool;
 
+#if _DEBUG
+#define assert(expression)                                                                                  \
+    do {                                                                                                    \
+        if (!(expression)) {                                                                                \
+            print_cpu_state(cpu);                                                                           \
+            fprintf(stderr, "Assertion failed: %s, file %s, line %d\n", #expression, __FILE__, __LINE__);   \
+            *((int *)0) = 0;                                                                                \
+        }                                                                                                   \
+    } while (0)
+#else
+#define assert(expression)
+#endif
+
+
 typedef struct CPU {
     union {
         struct {
@@ -61,6 +75,59 @@ char *psr_mode[] = {
     [0b11111] = "SYSTEM",
 };
 
+
+static void
+num_to_binary_32(char *buffer, u32 num)
+{
+    int i = 0;
+    while (i < 32) {
+        buffer[i++] = '0' + ((num >> 31) & 1);
+        num <<= 1;
+    }
+    buffer[i] = '\0';
+}
+
+void
+print_cpu_state(CPU cpu)
+{
+    printf("----------------\n");
+    printf("Registers:\n");
+    for (int i = 0; i < 16; i++) {
+        printf("    r[%d] = %d\n", i, cpu.r[i]);
+    }
+    printf("----------------\n");
+    printf("PC = 0x%x\n", cpu.pc);
+
+    char cpsr_buffer[33];
+    num_to_binary_32(cpsr_buffer, cpu.cpsr);
+    printf("%s\n", cpsr_buffer);
+
+    printf("Condition flags: ");
+    if ((cpu.cpsr >> 31) & 1) printf("N"); else printf("-");
+    if ((cpu.cpsr >> 30) & 1) printf("Z"); else printf("-");
+    if ((cpu.cpsr >> 29) & 1) printf("C"); else printf("-");
+    if ((cpu.cpsr >> 28) & 1) printf("V"); else printf("-");
+    
+    printf("\n");
+    printf("Control bits: ");
+    if ((cpu.cpsr >> 7) & 1) printf("I"); else printf("-");
+    if ((cpu.cpsr >> 6) & 1) printf("F"); else printf("-");
+    if ((cpu.cpsr >> 5) & 1) printf("T"); else printf("-");
+
+    printf("\n");
+    printf("  Mode: %s: ", psr_mode[cpu.cpsr & 0b11111]);
+    if ((cpu.cpsr >> 4) & 1) printf("1"); else printf("0");
+    if ((cpu.cpsr >> 3) & 1) printf("1"); else printf("0");
+    if ((cpu.cpsr >> 2) & 1) printf("1"); else printf("0");
+    if ((cpu.cpsr >> 1) & 1) printf("1"); else printf("0");
+    if ((cpu.cpsr >> 0) & 1) printf("1"); else printf("0");
+
+
+    printf("\n");
+    printf("----------------\n");
+}
+
+
 // TODO: is it necessary to make fields for the "Not used" data to make the load simpler?
 typedef struct GBAMemory {
     // General Internal Memory
@@ -95,7 +162,7 @@ typedef struct GBAMemory {
 
 
 u8 *
-get_memory_at(GBAMemory *gba_memory, u32 at)
+get_memory_at(CPU cpu, GBAMemory *gba_memory, u32 at)
 {
     // General Internal Memory
     if (at <= 0x00003FFF) return (gba_memory->bios_system_rom + (at - 0x00000000));

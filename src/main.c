@@ -1,10 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <string.h>
 
 #include "types.h"
-
 
 
 #ifdef _DEBUG
@@ -22,57 +20,6 @@ bool is_running = true;
 
 CPU cpu = {0};
 
-static void
-num_to_binary_32(char *buffer, u32 num)
-{
-    int i = 0;
-    while (i < 32) {
-        buffer[i++] = '0' + ((num >> 31) & 1);
-        num <<= 1;
-    }
-    buffer[i] = '\0';
-}
-
-static void
-print_cpu_state()
-{
-    printf("----------------\n");
-    printf("Registers:\n");
-    for (int i = 0; i < 16; i++) {
-        printf("    r[%d] = %d\n", i, cpu.r[i]);
-    }
-    printf("----------------\n");
-    printf("PC = 0x%x\n", cpu.pc);
-
-    char cpsr_buffer[33];
-    num_to_binary_32(cpsr_buffer, cpu.cpsr);
-    printf("%s\n", cpsr_buffer);
-
-    printf("Condition flags: ");
-    if ((cpu.cpsr >> 31) & 1) printf("N"); else printf("-");
-    if ((cpu.cpsr >> 30) & 1) printf("Z"); else printf("-");
-    if ((cpu.cpsr >> 29) & 1) printf("C"); else printf("-");
-    if ((cpu.cpsr >> 28) & 1) printf("V"); else printf("-");
-    
-    printf("\n");
-    printf("Control bits: ");
-    if ((cpu.cpsr >> 7) & 1) printf("I"); else printf("-");
-    if ((cpu.cpsr >> 6) & 1) printf("F"); else printf("-");
-    if ((cpu.cpsr >> 5) & 1) printf("T"); else printf("-");
-
-    printf("\n");
-    printf("  Mode: %s: ", psr_mode[cpu.cpsr & 0b11111]);
-    if ((cpu.cpsr >> 4) & 1) printf("1"); else printf("0");
-    if ((cpu.cpsr >> 3) & 1) printf("1"); else printf("0");
-    if ((cpu.cpsr >> 2) & 1) printf("1"); else printf("0");
-    if ((cpu.cpsr >> 1) & 1) printf("1"); else printf("0");
-    if ((cpu.cpsr >> 0) & 1) printf("1"); else printf("0");
-
-
-    printf("\n");
-    printf("----------------\n");
-}
-
 //
 // Control Bits
 //
@@ -80,6 +27,12 @@ print_cpu_state()
 #define CONTROL_BITS_T          ((cpu.cpsr >> 5) & 1)          /* State bit */
 #define CONTROL_BITS_F          ((cpu.cpsr >> 6) & 1)          /* FIQ disable */
 #define CONTROL_BITS_I          ((cpu.cpsr >> 7) & 1)          /* IRQ disable */
+
+static void
+set_control_bit_T(u8 bit)
+{
+    cpu.cpsr = ((cpu.cpsr & ~(1 << 5)) | ((bit) & 1) << 5);
+}
 
 //
 // Codition Code Flags
@@ -259,7 +212,7 @@ should_execute_instruction(Condition condition)
             get_instruction_type_name(decoded_instruction.type, type_name);
             fprintf(stderr, "Current instruction: 0x%x -> type = %s\n", current_instruction, type_name);
 
-            print_cpu_state();
+            print_cpu_state(cpu);
 
             exit(1);
         }
@@ -278,15 +231,23 @@ process_branch()
             }
 
             cpu.pc += (decoded_instruction.offset << 2);
+
             current_instruction = 0;
         } break;
 
-        // case INSTRUCTION_BX: {
+        case INSTRUCTION_BX: {
+            DEBUG_PRINT("INSTRUCTION_BX\n");
 
-        // } break;
+            cpu.pc = cpu.r[decoded_instruction.rn];
+
+            u8 thumb_mode = cpu.r[decoded_instruction.rn] & 1; // TODO: check if the bit 0 is for the rn or the content of rn.
+            set_control_bit_T(thumb_mode);
+
+            current_instruction = 0;
+        } break;
 
         default: {
-            print_cpu_state();
+            // print_cpu_state(cpu);
             assert(!"Invalid instruction type for category");
         }
     }
@@ -609,7 +570,7 @@ process_single_data_transfer()
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
-                u8 *address = get_memory_at(&memory, base);
+                u8 *address = get_memory_at(cpu, &memory, base);
 
                 // Store data
                 if (decoded_instruction.B) {
@@ -622,7 +583,7 @@ process_single_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *address = get_memory_at(&memory, base);
+                u8 *address = get_memory_at(cpu, &memory, base);
 
                 // Store data
                 if (decoded_instruction.B) {
@@ -641,7 +602,7 @@ process_single_data_transfer()
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
-                u8 *address = get_memory_at(&memory, base);
+                u8 *address = get_memory_at(cpu, &memory, base);
 
                 // Store data
                 if (decoded_instruction.B) {
@@ -654,7 +615,7 @@ process_single_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *address = get_memory_at(&memory, base);
+                u8 *address = get_memory_at(cpu, &memory, base);
 
                 // Store data
                 if (decoded_instruction.B) {
@@ -710,7 +671,7 @@ process_halfword_and_signed_data_transfer()
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
-                u8 *address = get_memory_at(&memory, base);
+                u8 *address = get_memory_at(cpu, &memory, base);
                 // u8 *address = memory.iwram + base;
                 cpu.r[decoded_instruction.rd] = *((u16 *)address);
 
@@ -718,7 +679,7 @@ process_halfword_and_signed_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *address = get_memory_at(&memory, base);
+                u8 *address = get_memory_at(cpu, &memory, base);
                 // u8 *address = memory.iwram + base;
                 cpu.r[decoded_instruction.rd] = *((u16 *)address);
 
@@ -736,7 +697,7 @@ process_halfword_and_signed_data_transfer()
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
-                u8 *address = get_memory_at(&memory, base);
+                u8 *address = get_memory_at(cpu, &memory, base);
                 // u8 *address = memory.iwram + base;
                 *((u16 *)address) = (u16)cpu.r[decoded_instruction.rd];
 
@@ -744,7 +705,7 @@ process_halfword_and_signed_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *address = get_memory_at(&memory, base);
+                u8 *address = get_memory_at(cpu, &memory, base);
                 // u8 *address = memory.iwram + base;
                 *((u16 *)address) = (u16)cpu.r[decoded_instruction.rd];
 
@@ -762,7 +723,7 @@ process_halfword_and_signed_data_transfer()
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
-                u8 *memory_region = get_memory_at(&memory, base);
+                u8 *memory_region = get_memory_at(cpu, &memory, base);
                 // u8 *memory_region = memory.iwram + base;
                 u8 value = *memory_region;
                 u8 sign = (value >> 7) & 1;
@@ -774,7 +735,7 @@ process_halfword_and_signed_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *memory_region = get_memory_at(&memory, base);
+                u8 *memory_region = get_memory_at(cpu, &memory, base);
                 // u8 *memory_region = memory.iwram + base;
                 u8 value = *memory_region;
                 u8 sign = (value >> 7) & 1;
@@ -796,7 +757,7 @@ process_halfword_and_signed_data_transfer()
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
-                u8 *memory_region = get_memory_at(&memory, base);
+                u8 *memory_region = get_memory_at(cpu, &memory, base);
                 // u8 *memory_region = memory.iwram + base;
                 u16 value = *((u16 *)memory_region);
                 u8 sign = (value >> 15) & 1;
@@ -808,7 +769,7 @@ process_halfword_and_signed_data_transfer()
                     cpu.r[decoded_instruction.rn] = base;
                 }
             } else {
-                u8 *memory_region = get_memory_at(&memory, base);
+                u8 *memory_region = get_memory_at(cpu, &memory, base);
                 // u8 *memory_region = memory.iwram + base;
                 u16 value = *((u16 *)memory_region);
                 u8 sign = (value >> 15) & 1;
@@ -847,11 +808,11 @@ process_block_data_transfer()
                         if (decoded_instruction.P) {
                             base_address++;
 
-                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
+                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
                         } else {
-                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
+                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
 
@@ -868,11 +829,11 @@ process_block_data_transfer()
                         if (decoded_instruction.P) {
                             base_address--;
 
-                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
+                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
                         } else {
-                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
+                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             cpu.r[register_index] = *address;
 
@@ -905,11 +866,11 @@ process_block_data_transfer()
                         if (decoded_instruction.P) {
                             base_address += 4;
 
-                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
+                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
                         } else {
-                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
+                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
 
@@ -926,11 +887,11 @@ process_block_data_transfer()
                         if (decoded_instruction.P) {
                             base_address -= 4;
 
-                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
+                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
                         } else {
-                            u32 *address = (u32 *)get_memory_at(&memory, base_address);
+                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             // u32 *address = (u32 *)(memory.iwram) + base_address;
                             *address = cpu.r[register_index];
 
@@ -1705,7 +1666,9 @@ int main(int argc, char *argv[])
 
     process_instructions();
 
-    print_cpu_state();
+    print_cpu_state(cpu);
+
+    printf("Exit OK\n");
 #else
 // #include "test_B.c"
     init_gba();
