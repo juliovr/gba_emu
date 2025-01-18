@@ -1464,7 +1464,7 @@ SWP:
 static void
 fetch()
 {
-    current_instruction = *(u32 *)get_memory_at(&memory, cpu.pc);
+    current_instruction = get_instruction_at(&memory, cpu.pc);
     cpu.pc += 4;
 }
 

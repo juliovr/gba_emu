@@ -126,6 +126,12 @@ get_memory_at(GBAMemory *gba_memory, u32 at)
     return 0;
 }
 
+u32
+get_instruction_at(GBAMemory *gba_memory, u32 pc)
+{
+    return *(u32 *)(gba_memory->game_pak_rom + (pc - 0x08000000));
+}
+
 
 #define INSTRUCTION_FORMAT_DATA_PROCESSING                              (0)
 #define INSTRUCTION_FORMAT_MULTIPLY                                     (0b0000000000000000000010010000)
