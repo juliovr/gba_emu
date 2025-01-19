@@ -225,13 +225,256 @@ should_execute_instruction(Condition condition)
 static void
 thumb_execute()
 {
-    DEBUG_PRINT("execute thumb instruction");
+    if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_thumb_execute;
+    
+    switch (decoded_instruction.type) {
+        case INSTRUCTION_MOVE_SHIFTED_REGISTER: {
+            DEBUG_PRINT("INSTRUCTION_MOVE_SHIFTED_REGISTER\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_ADD_SUBTRACT: {
+            DEBUG_PRINT("INSTRUCTION_ADD_SUBTRACT\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE: {
+            DEBUG_PRINT("INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_ALU_OPERATIONS: {
+            DEBUG_PRINT("INSTRUCTION_ALU_OPERATIONS\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE: {
+            DEBUG_PRINT("INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_PC_RELATIVE_LOAD: {
+            DEBUG_PRINT("INSTRUCTION_PC_RELATIVE_LOAD\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET: {
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD: {
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET: {
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_LOAD_STORE_HALFWORD: {
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_HALFWORD\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_SP_RELATIVE_LOAD_STORE: {
+            DEBUG_PRINT("INSTRUCTION_SP_RELATIVE_LOAD_STORE\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_LOAD_ADDRESS: {
+            DEBUG_PRINT("INSTRUCTION_LOAD_ADDRESS\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_ADD_OFFSET_STACK_POINTER: {
+            DEBUG_PRINT("INSTRUCTION_ADD_OFFSET_STACK_POINTER\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_PUSH_POP_REGISTERS: {
+            DEBUG_PRINT("INSTRUCTION_PUSH_POP_REGISTERS\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_MULTIPLE_LOAD_STORE: {
+            DEBUG_PRINT("INSTRUCTION_MULTIPLE_LOAD_STORE\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_CONDITIONAL_BRANCH: {
+            DEBUG_PRINT("INSTRUCTION_CONDITIONAL_BRANCH\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_SOFTWARE_INTERRUPT: {
+            DEBUG_PRINT("INSTRUCTION_SOFTWARE_INTERRUPT\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_UNCONDITIONAL_BRANCH: {
+            DEBUG_PRINT("INSTRUCTION_UNCONDITIONAL_BRANCH\n");
+            assert(!"Implement");
+        } break;
+        case INSTRUCTION_LONG_BRANCH_WITH_LINK: {
+            DEBUG_PRINT("INSTRUCTION_LONG_BRANCH_WITH_LINK\n");
+            assert(!"Implement");
+        } break;
+    }
+
+exit_thumb_execute:
+    decoded_instruction = (Instruction){0};
 }
 
 static void
 thumb_decode()
 {
-    DEBUG_PRINT("process_thumb_instruction");
+    if (current_instruction == 0) return;
+
+    if ((current_instruction & THUMB_INSTRUCTION_FORMAT_LONG_BRANCH_WITH_LINK) == THUMB_INSTRUCTION_FORMAT_LONG_BRANCH_WITH_LINK) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_LONG_BRANCH_WITH_LINK,
+            .H = (current_instruction >> 11) & 1,
+            .offset = current_instruction & 0x7FF,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_UNCONDITIONAL_BRANCH) == THUMB_INSTRUCTION_FORMAT_UNCONDITIONAL_BRANCH) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_UNCONDITIONAL_BRANCH,
+            .offset = current_instruction & 0x7FF,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == THUMB_INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_SOFTWARE_INTERRUPT,
+            .value_8 = current_instruction & 0xFF,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_CONDITIONAL_BRANCH) == THUMB_INSTRUCTION_FORMAT_CONDITIONAL_BRANCH) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_CONDITIONAL_BRANCH,
+            .value_8 = current_instruction & 0xFF,
+            .condition = (current_instruction >> 8) & 0xF,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_MULTIPLE_LOAD_STORE) == THUMB_INSTRUCTION_FORMAT_MULTIPLE_LOAD_STORE) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_MULTIPLE_LOAD_STORE,
+            .register_list = current_instruction & 0xFF,
+            .rb = (current_instruction >> 8) & 7,
+            .L = (current_instruction >> 11) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_PUSH_POP_REGISTERS) == THUMB_INSTRUCTION_FORMAT_PUSH_POP_REGISTERS) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_PUSH_POP_REGISTERS,
+            .register_list = current_instruction & 0xFF,
+            .R = (current_instruction >> 8) & 1,
+            .L = (current_instruction >> 11) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_ADD_OFFSET_STACK_POINTER) == THUMB_INSTRUCTION_FORMAT_ADD_OFFSET_STACK_POINTER) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_ADD_OFFSET_STACK_POINTER,
+            .value_8 = current_instruction & 0x7F,
+            .S = (current_instruction >> 7) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_LOAD_ADDRESS) == THUMB_INSTRUCTION_FORMAT_LOAD_ADDRESS) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_LOAD_ADDRESS,
+            .value_8 = current_instruction & 0xFF,
+            .rd = (current_instruction >> 8) & 7,
+            .S = (current_instruction >> 11) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_SP_RELATIVE_LOAD_STORE) == THUMB_INSTRUCTION_FORMAT_SP_RELATIVE_LOAD_STORE) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_SP_RELATIVE_LOAD_STORE,
+            .value_8 = current_instruction & 0xFF,
+            .rd = (current_instruction >> 8) & 7,
+            .L = (current_instruction >> 11) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_LOAD_STORE_HALFWORD) == THUMB_INSTRUCTION_FORMAT_LOAD_STORE_HALFWORD) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_LOAD_STORE_HALFWORD,
+            .rd = (current_instruction >> 0) & 7,
+            .rb = (current_instruction >> 3) & 7,
+            .value_8 = (current_instruction >> 6) & 0x1F,
+            .L = (current_instruction >> 11) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_LOAD_STORE_WITH_IMMEDIATE_OFFSET) == THUMB_INSTRUCTION_FORMAT_LOAD_STORE_WITH_IMMEDIATE_OFFSET) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET,
+            .rd = (current_instruction >> 0) & 7,
+            .rb = (current_instruction >> 3) & 7,
+            .value_8 = (current_instruction >> 6) & 0x1F,
+            .L = (current_instruction >> 11) & 1,
+            .B = (current_instruction >> 12) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD) == THUMB_INSTRUCTION_FORMAT_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD,
+            .rd = (current_instruction >> 0) & 7,
+            .rb = (current_instruction >> 3) & 7,
+            .ro = (current_instruction >> 6) & 7,
+            .S = (current_instruction >> 10) & 1,
+            .H = (current_instruction >> 11) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_LOAD_STORE_WITH_REGISTER_OFFSET) == THUMB_INSTRUCTION_FORMAT_LOAD_STORE_WITH_REGISTER_OFFSET) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET,
+            .rd = (current_instruction >> 0) & 7,
+            .rb = (current_instruction >> 3) & 7,
+            .ro = (current_instruction >> 6) & 7,
+            .B = (current_instruction >> 10) & 1,
+            .L = (current_instruction >> 11) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_PC_RELATIVE_LOAD) == THUMB_INSTRUCTION_FORMAT_PC_RELATIVE_LOAD) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_PC_RELATIVE_LOAD,
+            .value_8 = current_instruction & 0xFF,
+            .rd = (current_instruction >> 8) & 7,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE) == THUMB_INSTRUCTION_FORMAT_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE,
+            .rd = (current_instruction >> 0) & 7,
+            .rs = (current_instruction >> 3) & 7,
+            .H2 = (current_instruction >> 6) & 1,
+            .H1 = (current_instruction >> 7) & 1,
+            .op = (current_instruction >> 8) & 0b11,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_ALU_OPERATIONS) == THUMB_INSTRUCTION_FORMAT_ALU_OPERATIONS) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_ALU_OPERATIONS,
+            .rd = (current_instruction >> 0) & 7,
+            .rs = (current_instruction >> 3) & 7,
+            .op = (current_instruction >> 6) & 0xF,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE) == THUMB_INSTRUCTION_FORMAT_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE,
+            .offset = current_instruction & 0xFF,
+            .rd = (current_instruction >> 8) & 7,
+            .op = (current_instruction >> 11) & 0b11,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_ADD_SUBTRACT) == THUMB_INSTRUCTION_FORMAT_ADD_SUBTRACT) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_ADD_SUBTRACT,
+            .rd = (current_instruction >> 0) & 7,
+            .rs = (current_instruction >> 3) & 7,
+            .rn = (current_instruction >> 6) & 7,
+            .op = (current_instruction >> 9) & 1,
+            .I = (current_instruction >> 10) & 1,
+        };
+    }
+    else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_MOVE_SHIFTED_REGISTER) == THUMB_INSTRUCTION_FORMAT_MOVE_SHIFTED_REGISTER) {
+        decoded_instruction = (Instruction) {
+            .type = INSTRUCTION_MOVE_SHIFTED_REGISTER,
+            .rd = (current_instruction >> 0) & 7,
+            .rs = (current_instruction >> 3) & 7,
+            .offset = (current_instruction >> 6) & 0x1F,
+            .op = (current_instruction >> 11) & 0b11,
+        };
+    }
+    else {
+        fprintf(stderr, "Thumb instruction unknown: 0x%x\n", current_instruction);
+        exit(1);
+    }
 }
 
 static void
@@ -239,8 +482,6 @@ thumb_fetch()
 {
     current_instruction = thumb_get_instruction_at(&memory, cpu.pc);
     cpu.pc += 2;
-
-    printf("current_instruction = 0x%x\n", current_instruction);
 }
 
 
@@ -1045,10 +1286,6 @@ execute()
     }
 
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
-    if (decoded_instruction.type == INSTRUCTION_UNKNOWN) {
-        assert(!"Invalid instruction");
-    }
-
     if (!should_execute_instruction(decoded_instruction.condition)) {
         // printf("Condition %d...Skipped\n", decoded_instruction.condition);
         goto exit_execute;
@@ -1116,12 +1353,6 @@ decode()
     }
 
     if (current_instruction == 0) return;
-
-    // If none of the if's below match, this will be the current instruction. This could not happen.
-    decoded_instruction = (Instruction) {
-        .type = INSTRUCTION_UNKNOWN,
-    };
-
 
     if ((current_instruction & INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
         decoded_instruction = (Instruction) {
