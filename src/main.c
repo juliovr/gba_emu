@@ -24,9 +24,11 @@ CPU cpu = {0};
 // Control Bits
 //
 #define CONTROL_BITS_MODE       ((cpu.cpsr >> 0) & 0b11111)    /* Mode bits */
-#define CONTROL_BITS_T          ((cpu.cpsr >> 5) & 1)          /* State bit */
+#define CONTROL_BITS_T          ((cpu.cpsr >> 5) & 1)          /* State bit (in Thumb mode) */
 #define CONTROL_BITS_F          ((cpu.cpsr >> 6) & 1)          /* FIQ disable */
 #define CONTROL_BITS_I          ((cpu.cpsr >> 7) & 1)          /* IRQ disable */
+
+#define IN_THUMB_MODE           CONTROL_BITS_T
 
 static void
 set_control_bit_T(u8 bit)
@@ -218,6 +220,29 @@ should_execute_instruction(Condition condition)
         }
     }
 }
+
+
+static void
+thumb_execute()
+{
+    DEBUG_PRINT("execute thumb instruction");
+}
+
+static void
+thumb_decode()
+{
+    DEBUG_PRINT("process_thumb_instruction");
+}
+
+static void
+thumb_fetch()
+{
+    current_instruction = thumb_get_instruction_at(&memory, cpu.pc);
+    cpu.pc += 2;
+
+    printf("current_instruction = 0x%x\n", current_instruction);
+}
+
 
 static void
 process_branch()
@@ -1014,6 +1039,11 @@ process_coprocessor_register_transfers()
 static void
 execute()
 {
+    if (IN_THUMB_MODE) {
+        thumb_execute();
+        return;
+    }
+
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
     if (decoded_instruction.type == INSTRUCTION_UNKNOWN) {
         assert(!"Invalid instruction");
@@ -1080,6 +1110,11 @@ exit_execute:
 static void
 decode()
 {
+    if (IN_THUMB_MODE) {
+        thumb_decode();
+        return;
+    }
+
     if (current_instruction == 0) return;
 
     // If none of the if's below match, this will be the current instruction. This could not happen.
@@ -1089,8 +1124,6 @@ decode()
 
 
     if ((current_instruction & INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
-        // printf("INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT: 0x%x\n", current_instruction);
-
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_SWI,
         };
@@ -1102,9 +1135,6 @@ decode()
 #endif
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) {
-        // printf("INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER: 0x%x\n", current_instruction);
-        
-        // TODO: Not handle at the moment. See if this is for multicable support.
         u8 L = (current_instruction >> 20) & 1;
         InstructionType type = 0;
         switch (L) {
@@ -1117,17 +1147,11 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION) {
-        // printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_OPERATION: 0x%x\n", current_instruction);
-        
-        // TODO: Not handle at the moment. See if this is for multicable support.
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_CDP,
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER) {
-        // printf("INSTRUCTION_FORMAT_COPROCESSOR_DATA_TRANSFER: 0x%x\n", current_instruction);
-
-        // TODO: Not handle at the moment. See if this is for multicable support.
         u8 L = (current_instruction >> 20) & 1;
         InstructionType type = 0;
         switch (L) {
@@ -1140,7 +1164,6 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_BRANCH) == INSTRUCTION_FORMAT_BRANCH) {
-        // printf("INSTRUCTION_FORMAT_BRANCH: 0x%x\n", current_instruction);
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_B,
             .offset = current_instruction & 0xFFFFFF,
@@ -1148,8 +1171,6 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) == INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER) {
-        // printf("INSTRUCTION_FORMAT_BLOCK_DATA_TRANSFER: 0x%x\n", current_instruction);
-
         int opcode = (current_instruction >> 20) & 1;
         InstructionType type = 0;
         switch (opcode) {
@@ -1177,12 +1198,7 @@ decode()
         // NOTE: S set means it is executed in privilege mode.
         assert(decoded_instruction.S == 0);
     }
-    // else if ((current_instruction &INSTRUCTION_FORMAT_UNDEFINED) == INSTRUCTION_FORMAT_UNDEFINED) {
-    //     printf("INSTRUCTION_FORMAT_UNDEFINED: 0x%x\n", current_instruction);
-    // }
     else if ((current_instruction & INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) == INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) {
-        // printf("INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER: 0x%x\n", current_instruction);
-
         int opcode = (current_instruction >> 20) & 1;
         InstructionType type = 0;
         switch (opcode) {
@@ -1204,8 +1220,6 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET) {
-        // printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET: 0x%x\n", current_instruction);
-
         u8 H = (current_instruction >> 5) & 1;
         u8 S = (current_instruction >> 6) & 1;
 
@@ -1240,8 +1254,6 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) == INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET) {
-        // printf("INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET: 0x%x\n", current_instruction);
-
         u8 H = (current_instruction >> 5) & 1;
         u8 S = (current_instruction >> 6) & 1;
 
@@ -1279,8 +1291,6 @@ decode()
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) == INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE) {
-        // printf("INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE: 0x%x\n", current_instruction);
-
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_BX,
             .rn = (current_instruction & 0xF),
@@ -1288,8 +1298,6 @@ decode()
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) == INSTRUCTION_FORMAT_SINGLE_DATA_SWAP) {
 SWP:
-        // printf("INSTRUCTION_FORMAT_SINGLE_DATA_SWAP: 0x%x\n", current_instruction);
-
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_SWP,
             .rm = current_instruction & 0xF,
@@ -1299,8 +1307,6 @@ SWP:
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_MULTIPLY_LONG) == INSTRUCTION_FORMAT_MULTIPLY_LONG) {
-        // printf("INSTRUCTION_FORMAT_MULTIPLY_LONG: 0x%x\n", current_instruction);
-
         u8 A = (current_instruction >> 21) & 1;
         InstructionType type = 0;
         switch (A) {
@@ -1320,8 +1326,6 @@ SWP:
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_MULTIPLY) == INSTRUCTION_FORMAT_MULTIPLY) {
-        // printf("INSTRUCTION_FORMAT_MULTIPLY: 0x%x\n", current_instruction);
-        
         u8 A = (current_instruction >> 21) & 1;
         InstructionType type = 0;
         switch (A) {
@@ -1340,8 +1344,6 @@ SWP:
         };
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
-        // printf("INSTRUCTION_FORMAT_DATA_PROCESSING: 0x%x\n", current_instruction);
-        
         int opcode = (current_instruction >> 21) & 0b1111;
         InstructionType type = 0;
         switch (opcode) {
@@ -1425,9 +1427,14 @@ SWP:
 static void
 fetch()
 {
-    current_instruction = get_instruction_at(&memory, cpu.pc);
-    cpu.pc += 4;
+    if (IN_THUMB_MODE) {
+        thumb_fetch();
+    } else {
+        current_instruction = get_instruction_at(&memory, cpu.pc);
+        cpu.pc += 4;
+    }
 }
+
 
 static void
 process_instructions()
@@ -1440,49 +1447,6 @@ process_instructions()
         fetch();
     }
 }
-
-#if 0
-static void
-process_instructions()
-{
-    u32 *instructions = (u32 *)memory.game_pak_rom;
-
-    while (1) {
-        // Fetch
-        current_instruction = instructions[cpu.pc++];
-
-        // Decode
-        if ((current_instruction & INSTRUCTION_FORMAT_BRANCH) == INSTRUCTION_FORMAT_BRANCH) {
-            decoded_instruction = (Instruction) {
-                .type = INSTRUCTION_B,
-                .offset = current_instruction & 0xFFFFFF,
-                .L = current_instruction & (1 << 24),
-            };
-        } else if ((current_instruction & INSTRUCTION_FORMAT_DATA_PROCESSING) == INSTRUCTION_FORMAT_DATA_PROCESSING) {
-            printf("Data processing\n");
-        } else {
-            fprintf(stderr, "Instruction unimplemented: 0x%x\n", current_instruction);
-            return;
-        }
-
-        // Execute
-        switch (decoded_instruction.type) {
-            case INSTRUCTION_B: {
-                if (decoded_instruction.L) {
-                    cpu.lr = cpu.pc - 1;
-                }
-
-                cpu.pc += decoded_instruction.offset;
-            } break;
-        }
-
-        decoded_instruction = (Instruction){0};
-    }
-}
-#endif
-
-
-
 
 
 
