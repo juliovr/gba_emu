@@ -222,7 +222,7 @@ should_execute_instruction(Condition condition)
 }
 
 
-static void
+void
 thumb_execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_thumb_execute;
@@ -382,7 +382,23 @@ thumb_execute()
         } break;
         case INSTRUCTION_LONG_BRANCH_WITH_LINK: {
             DEBUG_PRINT("INSTRUCTION_LONG_BRANCH_WITH_LINK\n");
-            assert(!"Implement");
+
+            u32 next_address = cpu.pc - 2; // Due to prefetching, the pc is already 2 instructions (4 bytes) ahead; just subtract 1 instruction.
+            
+            assert(decoded_instruction.H == 0);
+
+            cpu.lr = cpu.pc + ((u32)decoded_instruction.offset << 12);
+
+            thumb_decode();
+            thumb_fetch();
+
+            assert(decoded_instruction.H == 1);
+
+            cpu.pc = cpu.lr + ((u32)decoded_instruction.offset << 1);
+            
+            cpu.lr = next_address & -2; // NOTE: the address of the instruction following the BL is placed in LR and bit 0 of LR is set.
+
+            current_instruction = 0;
         } break;
     }
 
@@ -390,7 +406,7 @@ exit_thumb_execute:
     decoded_instruction = (Instruction){0};
 }
 
-static void
+void
 thumb_decode()
 {
     if (current_instruction == 0) return;
@@ -555,9 +571,11 @@ thumb_decode()
         fprintf(stderr, "Thumb instruction unknown: 0x%x\n", current_instruction);
         exit(1);
     }
+
+    decoded_instruction.address = cpu.pc - 2;
 }
 
-static void
+void
 thumb_fetch()
 {
     current_instruction = thumb_get_instruction_at(&memory, cpu.pc);
@@ -1357,7 +1375,7 @@ process_coprocessor_register_transfers()
 }
 
 
-static void
+void
 execute()
 {
     if (IN_THUMB_MODE) {
@@ -1424,7 +1442,7 @@ exit_execute:
 }
 
 
-static void
+void
 decode()
 {
     if (IN_THUMB_MODE) {
@@ -1731,11 +1749,12 @@ SWP:
 
 
     decoded_instruction.condition = (current_instruction >> 28) & 0xF;
+    decoded_instruction.address = cpu.pc - 4;
 
     current_instruction = 0;
 }
 
-static void
+void
 fetch()
 {
     if (IN_THUMB_MODE) {

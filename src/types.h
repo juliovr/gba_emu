@@ -488,6 +488,7 @@ InstructionCategory instruction_categories[] = {
 typedef struct Instruction {
     InstructionType type;
     Condition condition;
+    u32 address;
     int offset;
     u8 L;
     u8 S;
@@ -520,5 +521,13 @@ typedef struct Instruction {
     u8 op;
 } Instruction;
 
+
+void fetch();
+void decode();
+void execute();
+
+void thumb_fetch();
+void thumb_decode();
+void thumb_execute();
 
 #endif
