@@ -230,7 +230,44 @@ thumb_execute()
     switch (decoded_instruction.type) {
         case INSTRUCTION_MOVE_SHIFTED_REGISTER: {
             DEBUG_PRINT("INSTRUCTION_MOVE_SHIFTED_REGISTER\n");
-            assert(!"Implement");
+            
+            u8 rd = decoded_instruction.rd;
+            int shift = decoded_instruction.offset;
+            u16 value = (u16)cpu.r[decoded_instruction.rs];
+            u8 carry = 0;
+            u16 result = 0;
+            
+            switch (decoded_instruction.op) {
+                case THUMB_SHIFT_TYPE_LOGICAL_LEFT: {
+                    carry = (value >> (16 - shift)) & 1;
+
+                    result = value << shift;
+                } break;
+
+                case THUMB_SHIFT_TYPE_LOGICAL_RIGHT: {
+                    carry = (value >> (shift - 1)) & 1;
+
+                    result = value >> shift;
+                } break;
+
+                case THUMB_SHIFT_TYPE_ARITHMETIC_RIGHT: {
+                    carry = (value >> (shift - 1)) & 1;
+
+                    u8 msb = (value >> 15) & 1;
+                    u16 msb_replicated = (-msb << (16 - shift));
+
+                    result = (value >> shift) | msb_replicated;
+                } break;
+            }
+
+            cpu.r[rd] = result;
+
+            u8 overflow = (result < value) ? 1 : 0;
+
+            set_condition_V(overflow);
+            set_condition_C(carry);
+            set_condition_Z(result == 0);
+            set_condition_N(result >> 15);
         } break;
         case INSTRUCTION_ADD_SUBTRACT: {
             DEBUG_PRINT("INSTRUCTION_ADD_SUBTRACT\n");
@@ -504,7 +541,7 @@ process_branch()
         case INSTRUCTION_BX: {
             DEBUG_PRINT("INSTRUCTION_BX\n");
 
-            cpu.pc = cpu.r[decoded_instruction.rn];
+            cpu.pc = cpu.r[decoded_instruction.rn] & (-2); // NOTE: PC must be 16-bit align. This clears out the lsb (-2 is 0b1110).
 
             u8 thumb_mode = cpu.r[decoded_instruction.rn] & 1; // TODO: check if the bit 0 is for the rn or the content of rn.
             set_control_bit_T(thumb_mode);

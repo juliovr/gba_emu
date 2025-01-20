@@ -48,7 +48,10 @@ typedef struct CPU {
             u32 r10;
             u32 r11;
             u32 r12;
-            u32 r13;
+            union {
+                u32 r13;
+                u32 sp;
+            };
             union {
                 u32 r14;
                 u32 lr;
@@ -93,7 +96,7 @@ print_cpu_state(CPU cpu)
     printf("----------------\n");
     printf("Registers:\n");
     for (int i = 0; i < 16; i++) {
-        printf("    r[%d] = %d\n", i, cpu.r[i]);
+        printf("    r[%d] = 0x%x\n", i, cpu.r[i]);
     }
     printf("----------------\n");
     printf("PC = 0x%x\n", cpu.pc);
@@ -254,6 +257,12 @@ typedef enum ShiftType {
     SHIFT_TYPE_ARITHMETIC_RIGHT = 0b10,
     SHIFT_TYPE_ROTATE_RIGHT     = 0b11,
 } ShiftType;
+
+typedef enum ThumbShiftType {
+    THUMB_SHIFT_TYPE_LOGICAL_LEFT       = 0,
+    THUMB_SHIFT_TYPE_LOGICAL_RIGHT      = 1,
+    THUMB_SHIFT_TYPE_ARITHMETIC_RIGHT   = 2,
+} ThumbShiftType;
 
 typedef enum Condition {
     CONDITION_EQ = 0b0000,

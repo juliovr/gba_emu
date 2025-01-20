@@ -4,6 +4,7 @@
         "types.h": "c",
         "stdint.h": "c",
         "string.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "xlocale": "c"
     }
 }
