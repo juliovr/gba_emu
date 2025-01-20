@@ -319,7 +319,50 @@ thumb_execute()
         } break;
         case INSTRUCTION_PUSH_POP_REGISTERS: {
             DEBUG_PRINT("INSTRUCTION_PUSH_POP_REGISTERS\n");
-            assert(!"Implement");
+
+            u8 register_list = (u8)decoded_instruction.register_list;
+            u32 sp = cpu.sp;
+
+            if (decoded_instruction.R) {
+                if (decoded_instruction.L) {
+                    // Load
+                    u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
+                    cpu.pc = *address;
+
+                    sp += 4;
+                } else {
+                    // Store
+                    sp -= 4;
+
+                    u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
+                    *address = cpu.lr;
+                }
+            }
+
+            int register_index = 7;
+            while (register_list) {
+                bool register_index_set = (register_list >> 7) & 1;
+                if (register_index_set) {
+                    if (decoded_instruction.L) {
+                        // Load
+                        u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
+                        cpu.r[register_index] = *address;
+
+                        sp += 4;
+                    } else {
+                        // Store
+                        sp -= 4;
+
+                        u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
+                        *address = cpu.r[register_index];
+                    }
+                }
+
+                register_index--;
+                register_list <<= 1;
+            }
+
+            cpu.sp = sp;
         } break;
         case INSTRUCTION_MULTIPLE_LOAD_STORE: {
             DEBUG_PRINT("INSTRUCTION_MULTIPLE_LOAD_STORE\n");
