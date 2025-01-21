@@ -271,7 +271,24 @@ thumb_execute()
         } break;
         case INSTRUCTION_ADD_SUBTRACT: {
             DEBUG_PRINT("INSTRUCTION_ADD_SUBTRACT, 0x%x\n", decoded_instruction.address);
-            assert(!"Implement");
+            
+            u16 first_value = (u16)cpu.r[decoded_instruction.rs];
+            u16 second_value = (u16)((decoded_instruction.I) ? decoded_instruction.rn : cpu.r[decoded_instruction.rn]);
+            u16 result = 0;
+            if (decoded_instruction.op) {
+                result = (u16)(first_value - second_value);
+            } else {
+                result = (u16)(first_value + second_value);
+            }
+
+            cpu.r[decoded_instruction.rd] = result;
+
+            u8 overflow = (result < first_value) ? 1 : 0;
+
+            set_condition_V(overflow);
+            // set_condition_C(carry); // TODO: do this
+            set_condition_Z(result == 0);
+            set_condition_N(result >> 15);
         } break;
         case INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE: {
             DEBUG_PRINT("INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE, 0x%x\n", decoded_instruction.address);
