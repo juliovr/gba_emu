@@ -292,7 +292,35 @@ thumb_execute()
         } break;
         case INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE: {
             DEBUG_PRINT("INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE, 0x%x\n", decoded_instruction.address);
-            assert(!"Implement");
+            
+            u32 result = 0;
+            u32 old_value = cpu.r[decoded_instruction.rd];
+
+            switch (decoded_instruction.op) {
+                case 0: { // MOV
+                    result = decoded_instruction.offset;
+                    cpu.r[decoded_instruction.rd] = result;
+                } break;
+                case 1: { // CMP
+                    result = cpu.r[decoded_instruction.rd] - decoded_instruction.offset;
+                } break;
+                case 2: { // ADD
+                    result = cpu.r[decoded_instruction.rd] + decoded_instruction.offset;
+                    cpu.r[decoded_instruction.rd] = result;
+                } break;
+                case 3: { // SUB
+                    result = cpu.r[decoded_instruction.rd] - decoded_instruction.offset;
+                    cpu.r[decoded_instruction.rd] = result;
+                } break;
+            }
+
+
+            u8 overflow = (result < old_value) ? 1 : 0;
+
+            set_condition_V(overflow);
+            // set_condition_C(carry); // TODO: do this
+            set_condition_Z(result == 0);
+            set_condition_N(result >> 31); // TODO: check the shift
         } break;
         case INSTRUCTION_ALU_OPERATIONS: {
             DEBUG_PRINT("INSTRUCTION_ALU_OPERATIONS, 0x%x\n", decoded_instruction.address);
