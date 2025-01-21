@@ -305,9 +305,9 @@ thumb_execute()
         case INSTRUCTION_PC_RELATIVE_LOAD: {
             DEBUG_PRINT("INSTRUCTION_PC_RELATIVE_LOAD, 0x%x\n", decoded_instruction.address);
             
-            // u32 base = (((cpu.pc - 2) & -2) + (decoded_instruction.offset << 2)); // TODO: in mGBA this computes the value, but the spec says the PC is 4 bytes ahead of this instruction.
-                                                                                     // Let's see how it goes.
-            u32 base = ((cpu.pc & -2) + (decoded_instruction.offset << 2));
+            u32 base = (((cpu.pc - 2) & -2) + (decoded_instruction.offset << 2));   // TODO: in mGBA this computes the value, but the data sheet says the PC is 4 bytes ahead of this instruction.
+                                                                                    // Let's see why this works.
+            // u32 base = ((cpu.pc & -2) + (decoded_instruction.offset << 2));
             u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
 
             cpu.r[decoded_instruction.rd] = *address;
@@ -326,7 +326,14 @@ thumb_execute()
         } break;
         case INSTRUCTION_LOAD_STORE_HALFWORD: {
             DEBUG_PRINT("INSTRUCTION_LOAD_STORE_HALFWORD, 0x%x\n", decoded_instruction.address);
-            assert(!"Implement");
+            
+            u32 base = cpu.r[decoded_instruction.rb] + decoded_instruction.offset;
+            u16 *address = (u16 *)get_memory_at(cpu, &memory, base);
+            if (decoded_instruction.L) {
+                cpu.r[decoded_instruction.rd] = (u32)*address; // Cast to u32 to fill high bits with 0.
+            } else {
+                *address = (u16)cpu.r[decoded_instruction.rd];
+            }
         } break;
         case INSTRUCTION_SP_RELATIVE_LOAD_STORE: {
             DEBUG_PRINT("INSTRUCTION_SP_RELATIVE_LOAD_STORE, 0x%x\n", decoded_instruction.address);
@@ -504,7 +511,7 @@ thumb_decode()
             .type = INSTRUCTION_LOAD_STORE_HALFWORD,
             .rd = (current_instruction >> 0) & 7,
             .rb = (current_instruction >> 3) & 7,
-            .value_8 = (current_instruction >> 6) & 0x1F,
+            .offset = (current_instruction >> 6) & 0x1F,
             .L = (current_instruction >> 11) & 1,
         };
     }
