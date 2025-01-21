@@ -343,9 +343,13 @@ thumb_execute()
             DEBUG_PRINT("INSTRUCTION_LOAD_ADDRESS, 0x%x\n", decoded_instruction.address);
             assert(!"Implement");
         } break;
-        case INSTRUCTION_ADD_OFFSET_STACK_POINTER: {
-            DEBUG_PRINT("INSTRUCTION_ADD_OFFSET_STACK_POINTER, 0x%x\n", decoded_instruction.address);
-            assert(!"Implement");
+        case INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER: {
+            DEBUG_PRINT("INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER, 0x%x\n", decoded_instruction.address);
+            
+            s8 sign = decoded_instruction.S ? -1 : 1;
+            int offset = sign * (decoded_instruction.offset << 2);
+
+            cpu.sp += offset;
         } break;
         case INSTRUCTION_PUSH_POP_REGISTERS: {
             DEBUG_PRINT("INSTRUCTION_PUSH_POP_REGISTERS, 0x%x\n", decoded_instruction.address);
@@ -485,8 +489,8 @@ thumb_decode()
     }
     else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_ADD_OFFSET_STACK_POINTER) == THUMB_INSTRUCTION_FORMAT_ADD_OFFSET_STACK_POINTER) {
         decoded_instruction = (Instruction) {
-            .type = INSTRUCTION_ADD_OFFSET_STACK_POINTER,
-            .value_8 = current_instruction & 0x7F,
+            .type = INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER,
+            .offset = current_instruction & 0x7F,
             .S = (current_instruction >> 7) & 1,
         };
     }
