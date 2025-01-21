@@ -5,6 +5,8 @@
         "stdint.h": "c",
         "string.h": "c",
         "stdio.h": "c",
-        "xlocale": "c"
+        "xlocale": "c",
+        "sstream": "c",
+        "streambuf": "c"
     }
 }

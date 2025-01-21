@@ -328,7 +328,48 @@ thumb_execute()
         } break;
         case INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE: {
             DEBUG_PRINT("INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE, 0x%x\n", decoded_instruction.address);
-            assert(!"Implement");
+            
+            // H1 and H2 are flags to use the register as a Hi register (in the range of 8-15).
+            // H1 for rd; H2 for rs.
+            u8 H1 = decoded_instruction.H1;
+            u8 H2 = decoded_instruction.H2;
+            u8 op = decoded_instruction.op;
+            
+            assert(!(H1 == 0 &&
+                     H2 == 0 &&
+                    (op == 0 || op == 1 || op == 2)));
+            
+
+            u8 rs = decoded_instruction.rs + (H2 * 8);
+            u8 rd = decoded_instruction.rd + (H1 * 8);
+
+            switch (op) {
+                case 0: { // ADD
+                    cpu.r[rd] += cpu.r[rs];
+                } break;
+                case 1: { // CMP
+                    u32 old_value = cpu.r[rd];
+                    u32 result = cpu.r[rd] - cpu.r[rs];
+                    
+                    u8 overflow = (result < old_value) ? 1 : 0;
+                    
+                    set_condition_V(overflow);
+                    // set_condition_C(carry); // TODO: do this
+                    set_condition_Z(result == 0);
+                    set_condition_N(result >> 31); // TODO: check the shift
+                } break;
+                case 2: { // MOV
+                    cpu.r[rd] = cpu.r[rs];
+                } break;
+                case 3: { // BX
+                    cpu.pc = cpu.r[rs] & (-2);
+
+                    u8 thumb_mode = cpu.r[rs] & 1;
+                    set_control_bit_T(thumb_mode);
+
+                    current_instruction = 0;
+                } break;
+            }
         } break;
         case INSTRUCTION_PC_RELATIVE_LOAD: {
             DEBUG_PRINT("INSTRUCTION_PC_RELATIVE_LOAD, 0x%x\n", decoded_instruction.address);
@@ -673,7 +714,7 @@ process_branch()
 
             cpu.pc = cpu.r[decoded_instruction.rn] & (-2); // NOTE: PC must be 16-bit align. This clears out the lsb (-2 is 0b1110).
 
-            u8 thumb_mode = cpu.r[decoded_instruction.rn] & 1; // TODO: check if the bit 0 is for the rn or the content of rn.
+            u8 thumb_mode = cpu.r[decoded_instruction.rn] & 1;
             set_control_bit_T(thumb_mode);
 
             current_instruction = 0;
