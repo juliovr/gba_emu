@@ -365,7 +365,14 @@ thumb_execute()
         } break;
         case INSTRUCTION_SP_RELATIVE_LOAD_STORE: {
             DEBUG_PRINT("INSTRUCTION_SP_RELATIVE_LOAD_STORE, 0x%x\n", decoded_instruction.address);
-            assert(!"Implement");
+            
+            u32 base = cpu.sp + (decoded_instruction.offset << 2);
+            u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
+            if (decoded_instruction.L) {
+                cpu.r[decoded_instruction.rd] = *address;
+            } else {
+                *address = cpu.r[decoded_instruction.rd];
+            }
         } break;
         case INSTRUCTION_LOAD_ADDRESS: {
             DEBUG_PRINT("INSTRUCTION_LOAD_ADDRESS, 0x%x\n", decoded_instruction.address);
@@ -533,7 +540,7 @@ thumb_decode()
     else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_SP_RELATIVE_LOAD_STORE) == THUMB_INSTRUCTION_FORMAT_SP_RELATIVE_LOAD_STORE) {
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_SP_RELATIVE_LOAD_STORE,
-            .value_8 = current_instruction & 0xFF,
+            .offset = current_instruction & 0xFF,
             .rd = (current_instruction >> 8) & 7,
             .L = (current_instruction >> 11) & 1,
         };
