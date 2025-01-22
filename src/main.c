@@ -391,12 +391,29 @@ thumb_execute()
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET: {
             DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET, 0x%x\n", decoded_instruction.address);
-            assert(!"Implement");
+
+            u32 base = cpu.r[decoded_instruction.rb] + (decoded_instruction.offset << 2);
+            if (decoded_instruction.B) {
+                u8 *address = get_memory_at(cpu, &memory, base);
+                if (decoded_instruction.L) {
+                    cpu.r[decoded_instruction.rd] = (u32)*address;
+                } else {
+                    *address = (u8)cpu.r[decoded_instruction.rd];
+                }
+            } else {
+                u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
+                if (decoded_instruction.L) {
+                    cpu.r[decoded_instruction.rd] = *address;
+                } else {
+                    *address = cpu.r[decoded_instruction.rd];
+                }
+            }
+
         } break;
         case INSTRUCTION_LOAD_STORE_HALFWORD: {
             DEBUG_PRINT("INSTRUCTION_LOAD_STORE_HALFWORD, 0x%x\n", decoded_instruction.address);
             
-            u32 base = cpu.r[decoded_instruction.rb] + decoded_instruction.offset;
+            u32 base = cpu.r[decoded_instruction.rb] + (decoded_instruction.offset << 1);
             u16 *address = (u16 *)get_memory_at(cpu, &memory, base);
             if (decoded_instruction.L) {
                 cpu.r[decoded_instruction.rd] = (u32)*address; // Cast to u32 to fill high bits with 0.
@@ -600,7 +617,7 @@ thumb_decode()
             .type = INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET,
             .rd = (current_instruction >> 0) & 7,
             .rb = (current_instruction >> 3) & 7,
-            .value_8 = (current_instruction >> 6) & 0x1F,
+            .offset = (current_instruction >> 6) & 0x1F,
             .L = (current_instruction >> 11) & 1,
             .B = (current_instruction >> 12) & 1,
         };
