@@ -227,10 +227,10 @@ should_execute_instruction(Condition condition)
         case CONDITION_LE: return (CONDITION_Z == 1 || CONDITION_N != CONDITION_V);
         case CONDITION_AL: return true; // Always
         default: {
-            fprintf(stderr, "Unexpected condition: %x\n", condition);
+            fprintf(stderr, "Unexpected condition: %X\n", condition);
             char type_name[64];
             get_instruction_type_name(decoded_instruction.type, type_name);
-            fprintf(stderr, "Address: 0x%x, Current instruction: 0x%x -> type = %s\n", decoded_instruction.address, current_instruction, type_name);
+            fprintf(stderr, "Address: 0x%X, Current instruction: 0x%X -> type = %s\n", decoded_instruction.address, current_instruction, type_name);
 
             print_cpu_state(cpu);
 
@@ -247,7 +247,7 @@ thumb_execute()
     
     switch (decoded_instruction.type) {
         case INSTRUCTION_MOVE_SHIFTED_REGISTER: {
-            DEBUG_PRINT("INSTRUCTION_MOVE_SHIFTED_REGISTER, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MOVE_SHIFTED_REGISTER, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             u8 rd = decoded_instruction.rd;
             int shift = decoded_instruction.offset;
@@ -288,7 +288,7 @@ thumb_execute()
             set_condition_N(result >> 15);
         } break;
         case INSTRUCTION_ADD_SUBTRACT: {
-            DEBUG_PRINT("INSTRUCTION_ADD_SUBTRACT, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ADD_SUBTRACT, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             u16 first_value = (u16)cpu.r[decoded_instruction.rs];
             u16 second_value = (u16)((decoded_instruction.I) ? decoded_instruction.rn : cpu.r[decoded_instruction.rn]);
@@ -309,7 +309,7 @@ thumb_execute()
             set_condition_N(result >> 15);
         } break;
         case INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE: {
-            DEBUG_PRINT("INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             u32 result = 0;
             u32 old_value = cpu.r[decoded_instruction.rd];
@@ -341,11 +341,11 @@ thumb_execute()
             set_condition_N(result >> 31); // TODO: check the shift
         } break;
         case INSTRUCTION_ALU_OPERATIONS: {
-            DEBUG_PRINT("INSTRUCTION_ALU_OPERATIONS, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ALU_OPERATIONS, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             assert(!"Implement");
         } break;
         case INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE: {
-            DEBUG_PRINT("INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             // H1 and H2 are flags to use the register as a Hi register (in the range of 8-15).
             // H1 for rd; H2 for rs.
@@ -390,7 +390,7 @@ thumb_execute()
             }
         } break;
         case INSTRUCTION_PC_RELATIVE_LOAD: {
-            DEBUG_PRINT("INSTRUCTION_PC_RELATIVE_LOAD, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_PC_RELATIVE_LOAD, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             u32 base = (((cpu.pc - 2) & -2) + (decoded_instruction.offset << 2));   // TODO: in mGBA this computes the value, but the data sheet says the PC is 4 bytes ahead of this instruction.
                                                                                     // Let's see why this works.
@@ -400,15 +400,15 @@ thumb_execute()
             cpu.r[decoded_instruction.rd] = *address;
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             assert(!"Implement");
         } break;
         case INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             assert(!"Implement");
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             u32 base = cpu.r[decoded_instruction.rb] + (decoded_instruction.offset << 2);
             if (decoded_instruction.B) {
@@ -429,7 +429,7 @@ thumb_execute()
 
         } break;
         case INSTRUCTION_LOAD_STORE_HALFWORD: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_HALFWORD, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_HALFWORD, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             u32 base = cpu.r[decoded_instruction.rb] + (decoded_instruction.offset << 1);
             u16 *address = (u16 *)get_memory_at(cpu, &memory, base);
@@ -440,7 +440,7 @@ thumb_execute()
             }
         } break;
         case INSTRUCTION_SP_RELATIVE_LOAD_STORE: {
-            DEBUG_PRINT("INSTRUCTION_SP_RELATIVE_LOAD_STORE, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SP_RELATIVE_LOAD_STORE, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             u32 base = cpu.sp + (decoded_instruction.offset << 2);
             u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
@@ -451,11 +451,11 @@ thumb_execute()
             }
         } break;
         case INSTRUCTION_LOAD_ADDRESS: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_ADDRESS, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_ADDRESS, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             assert(!"Implement");
         } break;
         case INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER: {
-            DEBUG_PRINT("INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             s8 sign = decoded_instruction.S ? -1 : 1;
             int offset = sign * (decoded_instruction.offset << 2);
@@ -463,7 +463,7 @@ thumb_execute()
             cpu.sp += offset;
         } break;
         case INSTRUCTION_PUSH_POP_REGISTERS: {
-            DEBUG_PRINT("INSTRUCTION_PUSH_POP_REGISTERS, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_PUSH_POP_REGISTERS, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             u8 register_list = (u8)decoded_instruction.register_list;
             u32 sp = cpu.sp;
@@ -510,23 +510,23 @@ thumb_execute()
             cpu.sp = sp;
         } break;
         case INSTRUCTION_MULTIPLE_LOAD_STORE: {
-            DEBUG_PRINT("INSTRUCTION_MULTIPLE_LOAD_STORE, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MULTIPLE_LOAD_STORE, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             assert(!"Implement");
         } break;
         case INSTRUCTION_CONDITIONAL_BRANCH: {
-            DEBUG_PRINT("INSTRUCTION_CONDITIONAL_BRANCH, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_CONDITIONAL_BRANCH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             assert(!"Implement");
         } break;
         case INSTRUCTION_SOFTWARE_INTERRUPT: {
-            DEBUG_PRINT("INSTRUCTION_SOFTWARE_INTERRUPT, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SOFTWARE_INTERRUPT, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             assert(!"Implement");
         } break;
         case INSTRUCTION_UNCONDITIONAL_BRANCH: {
-            DEBUG_PRINT("INSTRUCTION_UNCONDITIONAL_BRANCH, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_UNCONDITIONAL_BRANCH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             assert(!"Implement");
         } break;
         case INSTRUCTION_LONG_BRANCH_WITH_LINK: {
-            DEBUG_PRINT("INSTRUCTION_LONG_BRANCH_WITH_LINK, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LONG_BRANCH_WITH_LINK, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             // TODO: check the conditions for this instructions. The bugs of the next_address and last bit of LR are fixed, but now it crashes by Segmentation fault.
 
@@ -715,7 +715,7 @@ thumb_decode()
         };
     }
     else {
-        fprintf(stderr, "Thumb instruction unknown: 0x%x\n", current_instruction);
+        fprintf(stderr, "Thumb instruction unknown: 0x%X\n", current_instruction);
         exit(1);
     }
 
@@ -735,7 +735,7 @@ process_branch()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_B: {
-            DEBUG_PRINT("INSTRUCTION_B, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_B, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             if (decoded_instruction.L) {
                 cpu.lr = cpu.pc - 1;
@@ -747,7 +747,7 @@ process_branch()
         } break;
 
         case INSTRUCTION_BX: {
-            DEBUG_PRINT("INSTRUCTION_BX, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_BX, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             cpu.pc = cpu.r[decoded_instruction.rn] & (-2); // NOTE: PC must be 16-bit align. This clears out the lsb (-2 is 0b1110).
 
@@ -838,97 +838,97 @@ process_data_processing()
     
     switch (decoded_instruction.type) {
         case INSTRUCTION_ADD: {
-            DEBUG_PRINT("INSTRUCTION_ADD, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ADD, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = cpu.r[decoded_instruction.rn] + second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_AND: {
-            DEBUG_PRINT("INSTRUCTION_AND, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_AND, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = cpu.r[decoded_instruction.rn] & second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_EOR: {
-            DEBUG_PRINT("INSTRUCTION_EOR, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_EOR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             result = cpu.r[decoded_instruction.rn] ^ second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_SUB: {
-            DEBUG_PRINT("INSTRUCTION_SUB, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SUB, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             result = cpu.r[decoded_instruction.rn] - second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_RSB: {
-            DEBUG_PRINT("INSTRUCTION_RSB, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_RSB, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = second_operand - cpu.r[decoded_instruction.rn];
             store_result = true;
         } break;
         case INSTRUCTION_ADC: {
-            DEBUG_PRINT("INSTRUCTION_ADC, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ADC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = cpu.r[decoded_instruction.rn] & second_operand + carry;
             store_result = true;
         } break;
         case INSTRUCTION_SBC: {
-            DEBUG_PRINT("INSTRUCTION_SBC, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SBC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = cpu.r[decoded_instruction.rn] - second_operand + carry - 1;
             store_result = true;
         } break;
         case INSTRUCTION_RSC: {
-            DEBUG_PRINT("INSTRUCTION_RSC, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_RSC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = second_operand - cpu.r[decoded_instruction.rn] + carry - 1;
             store_result = true;
         } break;
         case INSTRUCTION_TST: {
-            DEBUG_PRINT("INSTRUCTION_TST, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_TST, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             result = cpu.r[decoded_instruction.rn] & second_operand;
             store_result = false;
         } break;
         case INSTRUCTION_TEQ: {
-            DEBUG_PRINT("INSTRUCTION_TEQ, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_TEQ, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             result = cpu.r[decoded_instruction.rn] ^ second_operand;
             store_result = false;
         } break;
         case INSTRUCTION_CMP: {
-            DEBUG_PRINT("INSTRUCTION_CMP, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_CMP, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             result = cpu.r[decoded_instruction.rn] - second_operand;
             store_result = false;
         } break;
         case INSTRUCTION_CMN: {
-            DEBUG_PRINT("INSTRUCTION_CMN, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_CMN, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             result = cpu.r[decoded_instruction.rn] + second_operand;
             store_result = false;
         } break;
         case INSTRUCTION_ORR: {
-            DEBUG_PRINT("INSTRUCTION_ORR, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ORR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = cpu.r[decoded_instruction.rn] | second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_MOV: {
-            DEBUG_PRINT("INSTRUCTION_MOV, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MOV, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_BIC: {
-            DEBUG_PRINT("INSTRUCTION_BIC, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_BIC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = cpu.r[decoded_instruction.rn] & !second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_MVN: {
-            DEBUG_PRINT("INSTRUCTION_MVN, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MVN, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             result = !second_operand;
             store_result = true;
@@ -969,7 +969,7 @@ process_psr_transfer()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_MRS: {
-            DEBUG_PRINT("INSTRUCTION_MRS, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MRS, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             
             u32 sr = cpu.cpsr;
             if (decoded_instruction.P) {
@@ -980,7 +980,7 @@ process_psr_transfer()
             cpu.r[decoded_instruction.rd] = sr;
         } break;
         case INSTRUCTION_MSR: {
-            DEBUG_PRINT("INSTRUCTION_MSR, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MSR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             u32 *sr = &cpu.cpsr;
             if (decoded_instruction.P) {
@@ -1014,22 +1014,22 @@ process_multiply()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_MUL: {
-            DEBUG_PRINT("INSTRUCTION_MUL, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MUL, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_MLA: {
-            DEBUG_PRINT("INSTRUCTION_MLA, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MLA, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_MULL: {
-            DEBUG_PRINT("INSTRUCTION_MULL, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MULL, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_MLAL: {
-            DEBUG_PRINT("INSTRUCTION_MLAL, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MLAL, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
@@ -1076,7 +1076,7 @@ process_single_data_transfer()
     
     switch (decoded_instruction.type) {
         case INSTRUCTION_LDR: {
-            DEBUG_PRINT("INSTRUCTION_LDR, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
             // TODO: check the un-align load (offset by 2)
 
             if (decoded_instruction.P) {
@@ -1109,7 +1109,7 @@ process_single_data_transfer()
             
         } break;
         case INSTRUCTION_STR: {
-            DEBUG_PRINT("INSTRUCTION_STR, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
@@ -1153,28 +1153,28 @@ process_halfword_and_signed_data_transfer()
     switch (decoded_instruction.type) {
         // Halfword and signed data transfer
         case INSTRUCTION_LDRH_IMM: {
-            DEBUG_PRINT("INSTRUCTION_LDRH_IMM, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRH_IMM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_STRH_IMM: {
-            DEBUG_PRINT("INSTRUCTION_STRH_IMM, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STRH_IMM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_LDRSB_IMM: {
-            DEBUG_PRINT("INSTRUCTION_LDRSB_IMM, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRSB_IMM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_LDRSH_IMM: {
-            DEBUG_PRINT("INSTRUCTION_LDRSH_IMM, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRSH_IMM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
 
         case INSTRUCTION_LDRH: {
-            DEBUG_PRINT("INSTRUCTION_LDRH, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             int base = cpu.r[decoded_instruction.rn];
             int offset = cpu.r[decoded_instruction.rm];
@@ -1200,7 +1200,7 @@ process_halfword_and_signed_data_transfer()
 
         } break;
         case INSTRUCTION_STRH: {
-            DEBUG_PRINT("INSTRUCTION_STRH, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STRH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             int base = cpu.r[decoded_instruction.rn];
             int offset = cpu.r[decoded_instruction.rm];
@@ -1226,7 +1226,7 @@ process_halfword_and_signed_data_transfer()
 
         } break;
         case INSTRUCTION_LDRSB: {
-            DEBUG_PRINT("INSTRUCTION_LDRSB, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRSB, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             int base = cpu.r[decoded_instruction.rn];
             int offset = cpu.r[decoded_instruction.rm];
@@ -1260,7 +1260,7 @@ process_halfword_and_signed_data_transfer()
 
         } break;
         case INSTRUCTION_LDRSH: {
-            DEBUG_PRINT("INSTRUCTION_LDRSH, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRSH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             int base = cpu.r[decoded_instruction.rn];
             int offset = cpu.r[decoded_instruction.rm];
@@ -1364,7 +1364,7 @@ process_block_data_transfer()
         } break;
 
         case INSTRUCTION_STM: {
-            DEBUG_PRINT("INSTRUCTION_STM, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             u32 base_address = cpu.r[decoded_instruction.rn];
             u16 register_list = decoded_instruction.register_list;
@@ -1431,7 +1431,7 @@ process_single_data_swap()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_SWP: {
-            DEBUG_PRINT("INSTRUCTION_SWP, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SWP, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
@@ -1448,7 +1448,7 @@ process_software_interrupt()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_SWI: {
-            DEBUG_PRINT("INSTRUCTION_SWI, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SWI, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
@@ -1465,7 +1465,7 @@ process_coprocessor_data_operations()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_CDP: {
-            DEBUG_PRINT("INSTRUCTION_CDP... Not implemented for now, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_CDP... Not implemented for now, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             // assert(!"Implement");
         } break;
@@ -1482,12 +1482,12 @@ process_coprocessor_data_transfers()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_STC: {
-            DEBUG_PRINT("INSTRUCTION_STC, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_LDC: {
-            DEBUG_PRINT("INSTRUCTION_LDC, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
@@ -1504,12 +1504,12 @@ process_coprocessor_register_transfers()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_MCR: {
-            DEBUG_PRINT("INSTRUCTION_MCR, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MCR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_MRC: {
-            DEBUG_PRINT("INSTRUCTION_MRC, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MRC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             assert(!"Implement");
         } break;
@@ -1890,7 +1890,7 @@ SWP:
 
 
     } else {
-        fprintf(stderr, "Instruction unknown: 0x%x\n", current_instruction);
+        fprintf(stderr, "Instruction unknown: 0x%X\n", current_instruction);
         exit(1);
     }
 
@@ -2103,7 +2103,7 @@ int main(int argc, char *argv[])
     }
     
     // CartridgeHeader *header = (CartridgeHeader *)memory.game_pak_rom;
-    // printf("fixed_value = 0x%x, expected = 0x96\n", header->fixed_value);
+    // printf("fixed_value = 0x%X, expected = 0x96\n", header->fixed_value);
 
     process_instructions();
 
