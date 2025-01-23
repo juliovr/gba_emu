@@ -528,7 +528,9 @@ thumb_execute()
         case INSTRUCTION_LONG_BRANCH_WITH_LINK: {
             DEBUG_PRINT("INSTRUCTION_LONG_BRANCH_WITH_LINK, 0x%x, mode = %s\n", decoded_instruction.address, get_current_mode());
 
-            u32 next_address = cpu.pc - 2; // Due to prefetching, the pc is already 2 instructions (4 bytes) ahead; just subtract 1 instruction.
+            // TODO: check the conditions for this instructions. The bugs of the next_address and last bit of LR are fixed, but now it crashes by Segmentation fault.
+
+            u32 next_address = cpu.pc; // Due to prefetching, the pc is already 2 instructions (4 bytes) ahead; just subtract 1 instruction.
             
             assert(decoded_instruction.H == 0);
 
@@ -541,7 +543,7 @@ thumb_execute()
 
             cpu.pc = cpu.lr + ((u32)decoded_instruction.offset << 1);
             
-            cpu.lr = next_address & -2; // NOTE: the address of the instruction following the BL is placed in LR and bit 0 of LR is set.
+            cpu.lr = next_address | 1; // NOTE: the address of the instruction following the BL is placed in LR and bit 0 of LR is set.
 
             current_instruction = 0;
         } break;
