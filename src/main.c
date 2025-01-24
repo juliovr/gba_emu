@@ -1023,8 +1023,7 @@ process_psr_transfer()
             
             u32 sr = cpu.cpsr;
             if (decoded_instruction.P) {
-                assert(!"INSTRUCTION_MRS not supported right now");
-                // TODO: set sr = cpu.spsr_<mode>, something like this
+                sr = cpu.spsr;
             }
 
             cpu.r[decoded_instruction.rd] = sr;
@@ -1034,8 +1033,7 @@ process_psr_transfer()
 
             u32 *sr = &cpu.cpsr;
             if (decoded_instruction.P) {
-                assert(!"SPSR not supported right now");
-                // TODO: set sr = &cpu.spsr_<mode>, something like this
+                sr = &cpu.spsr;
             }
 
             if (decoded_instruction.I) {
