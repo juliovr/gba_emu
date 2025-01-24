@@ -528,11 +528,12 @@ thumb_execute()
         case INSTRUCTION_LONG_BRANCH_WITH_LINK: {
             DEBUG_PRINT("INSTRUCTION_LONG_BRANCH_WITH_LINK, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
-            // assert(decoded_instruction.H == 0);
             if (decoded_instruction.H == 0) {
                 // First part of the instruction
-                cpu.lr = cpu.pc + ((u32)decoded_instruction.offset << 12);
+                u8 sign = (decoded_instruction.offset >> 10) & 1;
+                u32 sign_extended = (-sign << (23)); // 11 = offset size; 12 = the shift applied to offset
 
+                cpu.lr = cpu.pc + (((u32)decoded_instruction.offset << 12) | sign_extended);
             } else {
                 // Second part of the instruction
                 cpu.pc = cpu.lr + ((u32)decoded_instruction.offset << 1);
