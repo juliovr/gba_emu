@@ -129,11 +129,36 @@ load_cartridge_into_memory(char *filename)
     return 0;
 }
 
+static int
+load_bios_into_memory()
+{
+    char *filename = "src/gba_bios.bin";
+    FILE *file = fopen(filename, "rb");
+    if (file == NULL) {
+        fprintf(stderr, "[ERROR]: Could not load file \"%s\"\n", filename);
+        return 1;
+    } else {
+        fseek(file, 0, SEEK_END);
+        int size = ftell(file);
+        fseek(file, 0, SEEK_SET);
+
+        assert(size == sizeof(memory.bios_system_rom));
+
+        fread(memory.bios_system_rom, size, 1, file);
+        
+        fclose(file);
+    }
+
+    return 0;
+}
+
 static void
 init_gba()
 {
     memset(&cpu, 0, sizeof(CPU));
     memset(&memory, 0, sizeof(GBAMemory));
+
+    load_bios_into_memory();
 
     cpu.pc = 0x08000000;
 }
@@ -998,7 +1023,7 @@ process_psr_transfer()
             
             u32 sr = cpu.cpsr;
             if (decoded_instruction.P) {
-                assert(!"SPSR not supported right now");
+                assert(!"INSTRUCTION_MRS not supported right now");
                 // TODO: set sr = cpu.spsr_<mode>, something like this
             }
 
@@ -2121,10 +2146,7 @@ int main(int argc, char *argv[])
     char *filename = "Donkey Kong Country 2.gba";
     int error = load_cartridge_into_memory(filename);
     if (error) {
-        error = load_cartridge_into_memory("../Donkey Kong Country 2.gba");
-        if (error) {
-            exit(1);
-        }
+        exit(1);
     }
     
     // CartridgeHeader *header = (CartridgeHeader *)memory.game_pak_rom;
