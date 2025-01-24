@@ -2,6 +2,7 @@
 This is my attempt to make a GBA emulator without using any tutorials, only by reading documentation.
 
 # Instruction pipeline
+```
 Fetch       Instruction fetched from memory
   |
   v
@@ -11,6 +12,7 @@ Decode      Decoding of registers used in instructions
 Execute     Register(s) read from register bank
             Perform shift and ALU operations
             Write register(s) back to register bank
+```
 
 # References
 - [GBATEK](https://problemkaputt.de/gbatek.htm)
@@ -18,3 +20,4 @@ Execute     Register(s) read from register bank
 - [ARM Architecture Reference Manual](https://www.intel.com/programmable/technical-pdfs/654202.pdf)
 - [ARM7TDMI Data Sheet](https://www.dwedit.org/files/ARM7TDMI.pdf)
 - [GBA Architecture](https://www.copetti.org/writings/consoles/game-boy-advance/)
+- [BIOS File](https://archive.org/details/gba_bios_202206)
