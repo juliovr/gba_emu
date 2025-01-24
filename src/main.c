@@ -41,6 +41,12 @@ get_current_mode()
 }
 
 static void
+set_mode(u8 bits)
+{
+    cpu.cpsr = (cpu.cpsr & ((u32)~(0b11111))) | ((bits) & 0b11111);
+}
+
+static void
 set_control_bit_T(u8 bit)
 {
 #if _DEBUG
@@ -53,6 +59,19 @@ set_control_bit_T(u8 bit)
 
     cpu.cpsr = ((cpu.cpsr & ~(1 << 5)) | ((bit) & 1) << 5);
 }
+
+static void
+set_control_bit_F(u8 bit)
+{
+    cpu.cpsr = ((cpu.cpsr & ~(1 << 6)) | ((bit) & 1) << 6);
+}
+
+static void
+set_control_bit_I(u8 bit)
+{
+    cpu.cpsr = ((cpu.cpsr & ~(1 << 7)) | ((bit) & 1) << 7);
+}
+
 
 //
 // Codition Code Flags
@@ -519,7 +538,17 @@ thumb_execute()
         } break;
         case INSTRUCTION_SOFTWARE_INTERRUPT: {
             DEBUG_PRINT("INSTRUCTION_SOFTWARE_INTERRUPT, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
-            assert(!"Implement");
+            
+            cpu.lr = decoded_instruction.address + 2; // Next instruction
+            cpu.spsr = cpu.cpsr;
+
+            set_mode(MODE_SUPERVISOR);
+            set_control_bit_T(0); // Execute in ARM state
+            set_control_bit_I(1); // Disable normal interrupts
+
+            cpu.pc = 0x8;
+
+            current_instruction = 0;
         } break;
         case INSTRUCTION_UNCONDITIONAL_BRANCH: {
             DEBUG_PRINT("INSTRUCTION_UNCONDITIONAL_BRANCH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
@@ -721,7 +750,7 @@ thumb_decode()
 void
 thumb_fetch()
 {
-    current_instruction = thumb_get_instruction_at(&memory, cpu.pc);
+    current_instruction = *(u16 *)get_memory_at(cpu, &memory, cpu.pc);
     cpu.pc += 2;
 }
 
@@ -1903,7 +1932,7 @@ fetch()
     if (IN_THUMB_MODE) {
         thumb_fetch();
     } else {
-        current_instruction = get_instruction_at(&memory, cpu.pc);
+        current_instruction = *(u32 *)get_memory_at(cpu, &memory, cpu.pc);
         cpu.pc += 4;
     }
 }

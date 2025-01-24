@@ -65,17 +65,26 @@ typedef struct CPU {
     };
 
     u32 cpsr; // Current Program Status Register
+    u32 spsr; // Saved Program Status Register
     // TODO: how to store the banked registers.
 } CPU;
 
+#define MODE_USER       (0b10000)
+#define MODE_FIQ        (0b10001)
+#define MODE_IRQ        (0b10010)
+#define MODE_SUPERVISOR (0b10011)
+#define MODE_ABORT      (0b10111)
+#define MODE_UNDEFINED  (0b11011)
+#define MODE_SYSTEM     (0b11111)
+
 char *psr_mode[] = {
-    [0b10000] = "USER",
-    [0b10001] = "FIQ",
-    [0b10010] = "IRQ",
-    [0b10011] = "SUPERVISOR",
-    [0b10111] = "ABORT",
-    [0b11011] = "UNDEFINED",
-    [0b11111] = "SYSTEM",
+    [MODE_USER]         = "USER",
+    [MODE_FIQ]          = "FIQ",
+    [MODE_IRQ]          = "IRQ",
+    [MODE_SUPERVISOR]   = "SUPERVISOR",
+    [MODE_ABORT]        = "ABORT",
+    [MODE_UNDEFINED]    = "UNDEFINED",
+    [MODE_SYSTEM]       = "SYSTEM",
 };
 
 
@@ -194,18 +203,6 @@ get_memory_at(CPU cpu, GBAMemory *gba_memory, u32 at)
 
     assert(!"Invalid memory");
     return 0;
-}
-
-u32
-get_instruction_at(GBAMemory *gba_memory, u32 pc)
-{
-    return *(u32 *)(gba_memory->game_pak_rom + (pc - 0x08000000));
-}
-
-u16
-thumb_get_instruction_at(GBAMemory *gba_memory, u32 pc)
-{
-    return *(u16 *)(gba_memory->game_pak_rom + (pc - 0x08000000));
 }
 
 
