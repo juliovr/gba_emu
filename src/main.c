@@ -398,7 +398,128 @@ thumb_execute()
         } break;
         case INSTRUCTION_ALU_OPERATIONS: {
             DEBUG_PRINT("INSTRUCTION_ALU_OPERATIONS, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
-            assert(!"Implement");
+            
+            u8 rd = decoded_instruction.rd;
+            u8 rs = decoded_instruction.rs;
+
+            u32 result = 0;
+            bool store_result = false;
+
+            switch (decoded_instruction.op) {
+                case 0: { // AND
+                    result = cpu.r[rd] & cpu.r[rs];
+                    store_result = true;
+                } break;
+                case 1: { // EOR
+                    result = cpu.r[rd] ^ cpu.r[rs];
+                    store_result = true;
+                } break;
+                case 2: { // LSL
+                    result = cpu.r[rd] << cpu.r[rs];
+                    store_result = true;
+
+                    if (cpu.r[rs]) {
+                        set_condition_C((result >> 31) & 1);
+                    }
+                } break;
+                case 3: { // LSR
+                    if (cpu.r[rs]) {
+                        set_condition_C((cpu.r[rd] >> (cpu.r[rs] - 1)) & 1);
+                    }
+
+                    result = cpu.r[rd] >> cpu.r[rs];
+                    store_result = true;
+                } break;
+                case 4: { // ASR
+                    if (cpu.r[rs]) {
+                        set_condition_C((cpu.r[rd] >> (cpu.r[rs] - 1)) & 1);
+                    }
+
+                    u8 shift = cpu.r[rs] & 0xFF;
+                    u8 msb = (cpu.r[rd] >> 31) & 1;
+                    u32 msb_replicated = (-msb << (32 - shift));
+
+                    result = (cpu.r[rd] >> shift) | msb_replicated;
+                    store_result = true;
+                } break;
+                case 5: { // ADC
+                    result = (cpu.r[rd] + cpu.r[rs] + CONDITION_C);
+                    store_result = true;
+
+                    set_condition_C(result < cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result < cpu.r[rd]);
+                } break;
+                case 6: { // SBC
+                    result = (cpu.r[rd] - cpu.r[rs] - !(CONDITION_C));
+                    store_result = true;
+
+                    set_condition_C(result > cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result > cpu.r[rd]);
+                } break;
+                case 7: { // ROR
+                    if ((cpu.r[rs] & 0xF) == 0) {
+                        set_condition_C((cpu.r[rd] >> 31) & 1);
+                    } else {
+                        set_condition_C((cpu.r[rd] >> (((cpu.r[rs] & 0xF) - 1)) & 1));
+                    }
+
+                    u8 shift = cpu.r[rs] & 0xFF;
+                    u32 value_to_rotate = cpu.r[rd] & ((1 << shift) - 1);
+                    u32 rotate_masked = value_to_rotate << (32 - shift);
+
+                    result = (cpu.r[rd] >> shift) | rotate_masked;
+                    store_result = true;
+                } break;
+                case 8: { // TST
+                    result = cpu.r[rd] & cpu.r[rs];
+                    store_result = false;
+                } break;
+                case 9: { // NEG
+                    result = (u32)(-(s32)cpu.r[rs]);
+                    store_result = true;
+
+                    set_condition_C(result > cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result > cpu.r[rd]);
+                } break;
+                case 10: { // CMP
+                    result = cpu.r[rd] - cpu.r[rs];
+                    store_result = false;
+
+                    set_condition_C(result > cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result > cpu.r[rd]);
+                } break;
+                case 11: { // CMN
+                    result = cpu.r[rd] + cpu.r[rs];
+                    store_result = false;
+
+                    set_condition_C(result < cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result < cpu.r[rd]);
+                } break;
+                case 12: { // ORR
+                    result = cpu.r[rd] | cpu.r[rs];
+                    store_result = true;
+                } break;
+                case 13: { // MUL
+                    result = cpu.r[rd] * cpu.r[rs];
+                    store_result = true;
+                } break;
+                case 14: { // BIC
+                    result = cpu.r[rd] & !cpu.r[rs];
+                    store_result = true;
+                } break;
+                case 15: { // MVN
+                    result = !cpu.r[rs];
+                    store_result = true;
+                } break;
+            }
+
+            if (store_result) {
+                cpu.r[rd] = result;
+            }
+            
+            set_condition_N((result >> 31) & 1);
+            set_condition_Z(result == 0);
+
         } break;
         case INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE: {
             DEBUG_PRINT("INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
@@ -1001,6 +1122,7 @@ process_data_processing()
         }
     }
 
+    // TODO: check these conditions with the ARM Architecture Reference Manual. Verify `each` instruction
     if (decoded_instruction.S && decoded_instruction.rd != 15) {
         if (data_processing_types[decoded_instruction.type] == DATA_PROCESSING_LOGICAL) {
             if (shift_type == SHIFT_TYPE_LOGICAL_LEFT && shift_value == 0) {
