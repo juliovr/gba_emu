@@ -283,6 +283,18 @@ should_execute_instruction(Condition condition)
     }
 }
 
+/**
+ * actual_bits_value: how many bits are used in value.
+ */
+static u32
+left_shift_sign_extended(u32 value, u8 actual_bits_value, u8 shift)
+{
+    u8 sign = (value >> (actual_bits_value - 1)) & 1;
+    u32 value_sign_extended = (-sign << (actual_bits_value)) | value;
+
+    return (value_sign_extended << shift);
+}
+
 
 void
 thumb_execute()
@@ -584,10 +596,9 @@ thumb_execute()
 
             if (decoded_instruction.H == 0) {
                 // First part of the instruction
-                u8 sign = (decoded_instruction.offset >> 10) & 1;
-                u32 sign_extended = (-sign << (23)); // 11 = offset size; 12 = the shift applied to offset
+                u32 offset = left_shift_sign_extended(decoded_instruction.offset, 11, 12);
+                cpu.lr = cpu.pc + offset;
 
-                cpu.lr = cpu.pc + (((u32)decoded_instruction.offset << 12) | sign_extended);
             } else {
                 // Second part of the instruction
                 cpu.pc = cpu.lr + ((u32)decoded_instruction.offset << 1);
@@ -788,10 +799,11 @@ process_branch()
             DEBUG_PRINT("INSTRUCTION_B, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
 
             if (decoded_instruction.L) {
-                cpu.lr = cpu.pc - 1;
+                cpu.lr = decoded_instruction.address + 4;
             }
 
-            cpu.pc += (decoded_instruction.offset << 2);
+            // cpu.pc += (decoded_instruction.offset << 2);
+            cpu.pc += left_shift_sign_extended(decoded_instruction.offset, 24, 2);
 
             current_instruction = 0;
         } break;
