@@ -112,7 +112,7 @@ print_cpu_state(CPU cpu)
 
     char cpsr_buffer[33];
     num_to_binary_32(cpsr_buffer, cpu.cpsr);
-    printf("%s\n", cpsr_buffer);
+    printf("CPSR = %s\n", cpsr_buffer);
 
     printf("Condition flags: ");
     if ((cpu.cpsr >> 31) & 1) printf("N"); else printf("-");

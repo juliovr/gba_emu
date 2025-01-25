@@ -710,7 +710,11 @@ thumb_execute()
         } break;
         case INSTRUCTION_UNCONDITIONAL_BRANCH: {
             DEBUG_PRINT("INSTRUCTION_UNCONDITIONAL_BRANCH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
-            assert(!"Implement");
+            
+            u32 offset = left_shift_sign_extended(decoded_instruction.offset, 11, 1);
+            cpu.pc += offset;
+
+            current_instruction = 0;
         } break;
         case INSTRUCTION_LONG_BRANCH_WITH_LINK: {
             DEBUG_PRINT("INSTRUCTION_LONG_BRANCH_WITH_LINK, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
