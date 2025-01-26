@@ -18,15 +18,16 @@
 
 bool is_running = true;
 
-CPU cpu = {0};
+CPU gba_cpu = {0};
+CPU *cpu = &gba_cpu;
 
 //
 // Control Bits
 //
-#define CONTROL_BITS_MODE       ((cpu.cpsr >> 0) & 0b11111)    /* Mode bits */
-#define CONTROL_BITS_T          ((cpu.cpsr >> 5) & 1)          /* State bit (in Thumb mode) */
-#define CONTROL_BITS_F          ((cpu.cpsr >> 6) & 1)          /* FIQ disable */
-#define CONTROL_BITS_I          ((cpu.cpsr >> 7) & 1)          /* IRQ disable */
+#define CONTROL_BITS_MODE       ((cpu->cpsr >> 0) & 0b11111)    /* Mode bits */
+#define CONTROL_BITS_T          ((cpu->cpsr >> 5) & 1)          /* State bit (in Thumb mode) */
+#define CONTROL_BITS_F          ((cpu->cpsr >> 6) & 1)          /* FIQ disable */
+#define CONTROL_BITS_I          ((cpu->cpsr >> 7) & 1)          /* IRQ disable */
 
 #define IN_THUMB_MODE           CONTROL_BITS_T
 
@@ -43,7 +44,7 @@ get_current_instruction_encoding()
 static void
 set_mode(u8 bits)
 {
-    cpu.cpsr = (cpu.cpsr & ((u32)~(0b11111))) | ((bits) & 0b11111);
+    cpu->cpsr = (cpu->cpsr & ((u32)~(0b11111))) | ((bits) & 0b11111);
 }
 
 static void
@@ -57,52 +58,52 @@ set_control_bit_T(u8 bit)
     }
 #endif
 
-    cpu.cpsr = ((cpu.cpsr & ~(1 << 5)) | ((bit) & 1) << 5);
+    cpu->cpsr = ((cpu->cpsr & ~(1 << 5)) | ((bit) & 1) << 5);
 }
 
 static void
 set_control_bit_F(u8 bit)
 {
-    cpu.cpsr = ((cpu.cpsr & ~(1 << 6)) | ((bit) & 1) << 6);
+    cpu->cpsr = ((cpu->cpsr & ~(1 << 6)) | ((bit) & 1) << 6);
 }
 
 static void
 set_control_bit_I(u8 bit)
 {
-    cpu.cpsr = ((cpu.cpsr & ~(1 << 7)) | ((bit) & 1) << 7);
+    cpu->cpsr = ((cpu->cpsr & ~(1 << 7)) | ((bit) & 1) << 7);
 }
 
 
 //
 // Codition Code Flags
 //
-#define CONDITION_V             ((cpu.cpsr >> 28) & 1)     /* Overflow */
-#define CONDITION_C             ((cpu.cpsr >> 29) & 1)     /* Carry or borrow extended */
-#define CONDITION_Z             ((cpu.cpsr >> 30) & 1)     /* Zero */
-#define CONDITION_N             ((cpu.cpsr >> 31) & 1)     /* Negative or less than */
+#define CONDITION_V             ((cpu->cpsr >> 28) & 1)     /* Overflow */
+#define CONDITION_C             ((cpu->cpsr >> 29) & 1)     /* Carry or borrow extended */
+#define CONDITION_Z             ((cpu->cpsr >> 30) & 1)     /* Zero */
+#define CONDITION_N             ((cpu->cpsr >> 31) & 1)     /* Negative or less than */
 
 static void
 set_condition_V(u8 bit)
 {
-    cpu.cpsr = ((cpu.cpsr & ~(1 << 28)) | ((bit) & 1) << 28);
+    cpu->cpsr = ((cpu->cpsr & ~(1 << 28)) | ((bit) & 1) << 28);
 }
 
 static void
 set_condition_C(u8 bit)
 {
-    cpu.cpsr = ((cpu.cpsr & ~(1 << 29)) | ((bit) & 1) << 29);
+    cpu->cpsr = ((cpu->cpsr & ~(1 << 29)) | ((bit) & 1) << 29);
 }
 
 static void
 set_condition_Z(u8 bit)
 {
-    cpu.cpsr = ((cpu.cpsr & ~(1 << 30)) | ((bit) & 1) << 30);
+    cpu->cpsr = ((cpu->cpsr & ~(1 << 30)) | ((bit) & 1) << 30);
 }
 
 static void
 set_condition_N(u8 bit)
 {
-    cpu.cpsr = ((cpu.cpsr & ~(1 << 31)) | ((bit) & 1) << 31);
+    cpu->cpsr = ((cpu->cpsr & ~(1 << 31)) | ((bit) & 1) << 31);
 }
 
 
@@ -155,14 +156,14 @@ load_bios_into_memory()
 static void
 init_gba()
 {
-    memset(&cpu, 0, sizeof(CPU));
+    memset(&gba_cpu, 0, sizeof(CPU));
     memset(&memory, 0, sizeof(GBAMemory));
 
-    cpu.cpsr = MODE_SYSTEM;
+    cpu->cpsr = 0x2000001F;
 
     load_bios_into_memory();
 
-    cpu.pc = 0x08000000;
+    cpu->pc = 0x08000000;
 }
 
 /*
@@ -561,7 +562,7 @@ thumb_execute()
                     *get_register(cpu, rd) = *get_register(cpu, rs);
                 } break;
                 case 3: { // BX
-                    cpu.pc = *get_register(cpu, rs) & (-2);
+                    cpu->pc = *get_register(cpu, rs) & (-2);
 
                     u8 thumb_mode = *get_register(cpu, rs) & 1;
                     set_control_bit_T(thumb_mode);
@@ -573,9 +574,9 @@ thumb_execute()
         case INSTRUCTION_PC_RELATIVE_LOAD: {
             DEBUG_PRINT("INSTRUCTION_PC_RELATIVE_LOAD, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            u32 base = (((cpu.pc - 2) & -2) + (decoded_instruction.offset << 2));   // TODO: in mGBA this computes the value, but the data sheet says the PC is 4 bytes ahead of this instruction.
+            u32 base = (((cpu->pc - 2) & -2) + (decoded_instruction.offset << 2));   // TODO: in mGBA this computes the value, but the data sheet says the PC is 4 bytes ahead of this instruction.
                                                                                     // Let's see why this works.
-            // u32 base = ((cpu.pc & -2) + (decoded_instruction.offset << 2));
+            // u32 base = ((cpu->pc & -2) + (decoded_instruction.offset << 2));
             u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
 
             *get_register(cpu, decoded_instruction.rd) = *address;
@@ -623,7 +624,7 @@ thumb_execute()
         case INSTRUCTION_SP_RELATIVE_LOAD_STORE: {
             DEBUG_PRINT("INSTRUCTION_SP_RELATIVE_LOAD_STORE, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            u32 base = cpu.sp + (decoded_instruction.offset << 2);
+            u32 base = cpu->sp + (decoded_instruction.offset << 2);
             u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
             if (decoded_instruction.L) {
                 *get_register(cpu, decoded_instruction.rd) = *address;
@@ -641,19 +642,19 @@ thumb_execute()
             s8 sign = decoded_instruction.S ? -1 : 1;
             int offset = sign * (decoded_instruction.offset << 2);
 
-            cpu.sp += offset;
+            cpu->sp += offset;
         } break;
         case INSTRUCTION_PUSH_POP_REGISTERS: {
             DEBUG_PRINT("INSTRUCTION_PUSH_POP_REGISTERS, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             u8 register_list = (u8)decoded_instruction.register_list;
-            u32 sp = cpu.sp;
+            u32 sp = cpu->sp;
 
             if (decoded_instruction.R) {
                 if (decoded_instruction.L) {
                     // Load
                     u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
-                    cpu.pc = *address;
+                    cpu->pc = *address;
 
                     sp += 4;
                 } else {
@@ -661,7 +662,7 @@ thumb_execute()
                     sp -= 4;
 
                     u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
-                    *address = cpu.lr;
+                    *address = cpu->lr;
                 }
             }
 
@@ -688,7 +689,7 @@ thumb_execute()
                 register_list <<= 1;
             }
 
-            cpu.sp = sp;
+            cpu->sp = sp;
         } break;
         case INSTRUCTION_MULTIPLE_LOAD_STORE: {
             DEBUG_PRINT("INSTRUCTION_MULTIPLE_LOAD_STORE, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
@@ -701,14 +702,14 @@ thumb_execute()
         case INSTRUCTION_SOFTWARE_INTERRUPT: {
             DEBUG_PRINT("INSTRUCTION_SOFTWARE_INTERRUPT, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            cpu.r14_svc = decoded_instruction.address + 2; // Next instruction
-            cpu.spsr_svc = cpu.cpsr;
+            cpu->r14_svc = decoded_instruction.address + 2; // Next instruction
+            cpu->spsr_svc = cpu->cpsr;
 
             set_mode(MODE_SUPERVISOR);
             set_control_bit_T(0); // Execute in ARM state
             set_control_bit_I(1); // Disable normal interrupts
 
-            cpu.pc = 0x8;
+            cpu->pc = 0x8;
 
             current_instruction = 0;
         } break;
@@ -716,7 +717,7 @@ thumb_execute()
             DEBUG_PRINT("INSTRUCTION_UNCONDITIONAL_BRANCH, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             u32 offset = left_shift_sign_extended(decoded_instruction.offset, 11, 1);
-            cpu.pc += offset;
+            cpu->pc += offset;
 
             current_instruction = 0;
         } break;
@@ -726,12 +727,12 @@ thumb_execute()
             if (decoded_instruction.H == 0) {
                 // First part of the instruction
                 u32 offset = left_shift_sign_extended(decoded_instruction.offset, 11, 12);
-                cpu.lr = cpu.pc + offset;
+                cpu->lr = cpu->pc + offset;
 
             } else {
                 // Second part of the instruction
-                cpu.pc = cpu.lr + ((u32)decoded_instruction.offset << 1);
-                cpu.lr = (decoded_instruction.address + 2) | 1; // NOTE: the address of the instruction following the BL is placed in LR and bit 0 of LR is set.
+                cpu->pc = cpu->lr + ((u32)decoded_instruction.offset << 1);
+                cpu->lr = (decoded_instruction.address + 2) | 1; // NOTE: the address of the instruction following the BL is placed in LR and bit 0 of LR is set.
                 
                 current_instruction = 0;
             }
@@ -909,14 +910,14 @@ thumb_decode()
         exit(1);
     }
 
-    decoded_instruction.address = cpu.pc - 2;
+    decoded_instruction.address = cpu->pc - 2;
 }
 
 void
 thumb_fetch()
 {
-    current_instruction = *(u16 *)get_memory_at(cpu, &memory, cpu.pc);
-    cpu.pc += 2;
+    current_instruction = *(u16 *)get_memory_at(cpu, &memory, cpu->pc);
+    cpu->pc += 2;
 }
 
 
@@ -928,10 +929,11 @@ process_branch()
             DEBUG_PRINT("INSTRUCTION_B, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             if (decoded_instruction.L) {
-                cpu.lr = cpu.pc - 4;
+                cpu->lr = cpu->pc - 4;
             }
 
-            cpu.pc += left_shift_sign_extended(decoded_instruction.offset, 24, 2);
+            u32 offset = left_shift_sign_extended(decoded_instruction.offset, 24, 2);
+            cpu->pc += offset;
 
             current_instruction = 0;
         } break;
@@ -939,7 +941,7 @@ process_branch()
         case INSTRUCTION_BX: {
             DEBUG_PRINT("INSTRUCTION_BX, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            cpu.pc = *get_register(cpu, decoded_instruction.rn) & (-2); // NOTE: PC must be 16-bit align. This clears out the lsb (-2 is 0b1110).
+            cpu->pc = *get_register(cpu, decoded_instruction.rn) & (-2); // NOTE: PC must be 16-bit align. This clears out the lsb (-2 is 0b1110).
 
             u8 thumb_mode = *get_register(cpu, decoded_instruction.rn) & 1;
             set_control_bit_T(thumb_mode);
@@ -1169,7 +1171,7 @@ process_psr_transfer()
         case INSTRUCTION_MRS: {
             DEBUG_PRINT("INSTRUCTION_MRS, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            u32 sr = cpu.cpsr;
+            u32 sr = cpu->cpsr;
             if (decoded_instruction.P) {
                 sr = *(get_spsr_current_mode(cpu));
             }
@@ -1179,7 +1181,7 @@ process_psr_transfer()
         case INSTRUCTION_MSR: {
             DEBUG_PRINT("INSTRUCTION_MSR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            u32 *sr = &cpu.cpsr;
+            u32 *sr = &cpu->cpsr;
             if (decoded_instruction.P) {
                 sr = get_spsr_current_mode(cpu);
             }
@@ -1273,9 +1275,7 @@ process_single_data_transfer()
     switch (decoded_instruction.type) {
         case INSTRUCTION_LDR: {
             DEBUG_PRINT("INSTRUCTION_LDR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
-            // TODO: check the un-align load (offset by 2)
-            // TODO: continue from here... Read the Architecture Reference Manual to see if there is something wrong.
-            //       This is the first instruction in the BIOS that modify the r12 register (used by BX in 0x16C that fails).
+            
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
                 u8 *address = get_memory_at(cpu, &memory, base);
@@ -1561,6 +1561,9 @@ process_block_data_transfer()
 
         case INSTRUCTION_STM: {
             DEBUG_PRINT("INSTRUCTION_STM, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
+
+            // TODO: continue from here. Check the ARM Architecture Reference to see what's wrong.
+            //       It's going through Decrement part and the base address is 0, so it wraps up from highest address.
 
             u32 base_address = *get_register(cpu, decoded_instruction.rn);
             u16 register_list = decoded_instruction.register_list;
@@ -2090,7 +2093,7 @@ SWP:
 
 
     decoded_instruction.condition = (current_instruction >> 28) & 0xF;
-    decoded_instruction.address = cpu.pc - 4;
+    decoded_instruction.address = cpu->pc - 4;
 
     current_instruction = 0;
 }
@@ -2101,8 +2104,8 @@ fetch()
     if (IN_THUMB_MODE) {
         thumb_fetch();
     } else {
-        current_instruction = *(u32 *)get_memory_at(cpu, &memory, cpu.pc);
-        cpu.pc += 4;
+        current_instruction = *(u32 *)get_memory_at(cpu, &memory, cpu->pc);
+        cpu->pc += 4;
     }
 }
 
@@ -2216,7 +2219,7 @@ void eval_B()
         .pc = 9,
     };
 
-    printf("PC = %d, expected = %d\n", cpu.pc, expected.pc);
+    printf("PC = %d, expected = %d\n", cpu->pc, expected.pc);
 }
 
 void init_AND()
@@ -2233,7 +2236,7 @@ void init_AND()
         .second_operand = ((rotate << 8) | imm) & 0xFFF,
     };
 
-    cpu.r0 = 7;
+    cpu->r0 = 7;
     
     add_instruction(&cartridge, instruction);
     add_instruction(&cartridge, exit_instruction);
@@ -2250,9 +2253,9 @@ void eval_AND()
         .cpsr = 0,
     };
 
-    printf("r0 = %d, expected = %d\n", cpu.r0, expected.r0);
-    printf("r1 = %d, expected = %d\n", cpu.r1, expected.r1);
-    printf("cpsr = %d, expected = %d\n", cpu.cpsr, expected.cpsr);
+    printf("r0 = %d, expected = %d\n", cpu->r0, expected.r0);
+    printf("r1 = %d, expected = %d\n", cpu->r1, expected.r1);
+    printf("cpsr = %d, expected = %d\n", cpu->cpsr, expected.cpsr);
 }
 
 void run_tests()

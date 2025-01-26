@@ -161,39 +161,39 @@ num_to_binary_32(char *buffer, u32 num)
 }
 
 void
-print_cpu_state(CPU cpu)
+print_cpu_state(CPU *cpu)
 {
     printf("----------------\n");
     printf("Registers:\n");
     for (int i = 0; i < 16; i++) {
-        printf("    r[%d] = 0x%x\n", i, cpu.r[i]);
+        printf("    r[%d] = 0x%x\n", i, cpu->r[i]);
     }
     printf("----------------\n");
-    printf("PC = 0x%x\n", cpu.pc);
+    printf("PC = 0x%x\n", cpu->pc);
 
     char cpsr_buffer[33];
-    num_to_binary_32(cpsr_buffer, cpu.cpsr);
+    num_to_binary_32(cpsr_buffer, cpu->cpsr);
     printf("CPSR = %s\n", cpsr_buffer);
 
     printf("Condition flags: ");
-    if ((cpu.cpsr >> 31) & 1) printf("N"); else printf("-");
-    if ((cpu.cpsr >> 30) & 1) printf("Z"); else printf("-");
-    if ((cpu.cpsr >> 29) & 1) printf("C"); else printf("-");
-    if ((cpu.cpsr >> 28) & 1) printf("V"); else printf("-");
+    if ((cpu->cpsr >> 31) & 1) printf("N"); else printf("-");
+    if ((cpu->cpsr >> 30) & 1) printf("Z"); else printf("-");
+    if ((cpu->cpsr >> 29) & 1) printf("C"); else printf("-");
+    if ((cpu->cpsr >> 28) & 1) printf("V"); else printf("-");
     
     printf("\n");
     printf("Control bits: ");
-    if ((cpu.cpsr >> 7) & 1) printf("I"); else printf("-");
-    if ((cpu.cpsr >> 6) & 1) printf("F"); else printf("-");
-    if ((cpu.cpsr >> 5) & 1) printf("T"); else printf("-");
+    if ((cpu->cpsr >> 7) & 1) printf("I"); else printf("-");
+    if ((cpu->cpsr >> 6) & 1) printf("F"); else printf("-");
+    if ((cpu->cpsr >> 5) & 1) printf("T"); else printf("-");
 
     printf("\n");
-    printf("  Mode: %s: ", psr_mode[cpu.cpsr & 0b11111]);
-    if ((cpu.cpsr >> 4) & 1) printf("1"); else printf("0");
-    if ((cpu.cpsr >> 3) & 1) printf("1"); else printf("0");
-    if ((cpu.cpsr >> 2) & 1) printf("1"); else printf("0");
-    if ((cpu.cpsr >> 1) & 1) printf("1"); else printf("0");
-    if ((cpu.cpsr >> 0) & 1) printf("1"); else printf("0");
+    printf("  Mode: %s: ", psr_mode[cpu->cpsr & 0b11111]);
+    if ((cpu->cpsr >> 4) & 1) printf("1"); else printf("0");
+    if ((cpu->cpsr >> 3) & 1) printf("1"); else printf("0");
+    if ((cpu->cpsr >> 2) & 1) printf("1"); else printf("0");
+    if ((cpu->cpsr >> 1) & 1) printf("1"); else printf("0");
+    if ((cpu->cpsr >> 0) & 1) printf("1"); else printf("0");
 
 
     printf("\n");
@@ -202,15 +202,15 @@ print_cpu_state(CPU cpu)
 
 
 u32 *
-get_spsr_current_mode(CPU cpu)
+get_spsr_current_mode(CPU *cpu)
 {
-    u8 mode = (cpu.cpsr & 0b11111);
+    u8 mode = (cpu->cpsr & 0b11111);
     switch (mode) {
-        case MODE_FIQ:          return &cpu.spsr_fiq;
-        case MODE_SUPERVISOR:   return &cpu.spsr_svc;
-        case MODE_ABORT:        return &cpu.spsr_abt;
-        case MODE_IRQ:          return &cpu.spsr_irq;
-        case MODE_UNDEFINED:    return &cpu.spsr_und;
+        case MODE_FIQ:          return &cpu->spsr_fiq;
+        case MODE_SUPERVISOR:   return &cpu->spsr_svc;
+        case MODE_ABORT:        return &cpu->spsr_abt;
+        case MODE_IRQ:          return &cpu->spsr_irq;
+        case MODE_UNDEFINED:    return &cpu->spsr_und;
         default: assert("!User and System mode does not have SPSR");
     }
 
@@ -218,49 +218,49 @@ get_spsr_current_mode(CPU cpu)
 }
 
 u32 *
-get_register(CPU cpu, u8 rn)
+get_register(CPU *cpu, u8 rn)
 {
-    u8 mode = (cpu.cpsr & 0b11111);
+    u8 mode = (cpu->cpsr & 0b11111);
     switch (mode) {
         case MODE_USER:
         case MODE_SYSTEM:
         {
-            return &cpu.r[rn];
+            return cpu->r + rn;
         } break;
         case MODE_FIQ: {
             if (rn <= 7 || rn == 15) {
-                return &cpu.r[rn];
+                return cpu->r + rn;
             }
 
-            return &cpu.r_fiq[rn - 8];
+            return cpu->r_fiq + (rn - 8);
         } break;
         case MODE_SUPERVISOR: {
             if (rn <= 12 || rn == 15) {
-                return &cpu.r[rn];
+                return cpu->r + rn;
             }
 
-            return &cpu.r_svc[rn - 13];
+            return cpu->r_svc + (rn - 13);
         } break;
         case MODE_ABORT: {
             if (rn <= 12 || rn == 15) {
-                return &cpu.r[rn];
+                return cpu->r + rn;
             }
 
-            return &cpu.r_abt[rn - 13];
+            return cpu->r_abt + (rn - 13);
         } break;
         case MODE_IRQ: {
             if (rn <= 12 || rn == 15) {
-                return &cpu.r[rn];
+                return cpu->r + rn;
             }
 
-            return &cpu.r_irq[rn - 13];
+            return cpu->r_irq + (rn - 13);
         } break;
         case MODE_UNDEFINED: {
             if (rn <= 12 || rn == 15) {
-                return &cpu.r[rn];
+                return cpu->r + rn;
             }
 
-            return &cpu.r_und[rn - 13];
+            return cpu->r_und + (rn - 13);
         } break;
 
         default: assert(!"Invalid mode");
@@ -305,7 +305,7 @@ typedef struct GBAMemory {
 
 
 u8 *
-get_memory_at(CPU cpu, GBAMemory *gba_memory, u32 at)
+get_memory_at(CPU *cpu, GBAMemory *gba_memory, u32 at)
 {
     // General Internal Memory
     if (at <= 0x00003FFF) return (gba_memory->bios_system_rom + (at - 0x00000000));
