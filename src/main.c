@@ -31,7 +31,7 @@ CPU cpu = {0};
 #define IN_THUMB_MODE           CONTROL_BITS_T
 
 static char *
-get_current_mode()
+get_current_instruction_encoding()
 {
     if (IN_THUMB_MODE) {
         return "THUMB";
@@ -157,6 +157,8 @@ init_gba()
 {
     memset(&cpu, 0, sizeof(CPU));
     memset(&memory, 0, sizeof(GBAMemory));
+
+    cpu.cpsr = MODE_SYSTEM;
 
     load_bios_into_memory();
 
@@ -303,11 +305,11 @@ thumb_execute()
     
     switch (decoded_instruction.type) {
         case INSTRUCTION_MOVE_SHIFTED_REGISTER: {
-            DEBUG_PRINT("INSTRUCTION_MOVE_SHIFTED_REGISTER, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MOVE_SHIFTED_REGISTER, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             u8 rd = decoded_instruction.rd;
             int shift = decoded_instruction.offset;
-            u16 value = (u16)cpu.r[decoded_instruction.rs];
+            u16 value = (u16)(*get_register(cpu, decoded_instruction.rs));
             u8 carry = 0;
             u16 result = 0;
             
@@ -334,7 +336,8 @@ thumb_execute()
                 } break;
             }
 
-            cpu.r[rd] = result;
+            u32 *rd_register = get_register(cpu, rd);
+            *rd_register = result;
 
             u8 overflow = (result < value) ? 1 : 0;
 
@@ -344,10 +347,10 @@ thumb_execute()
             set_condition_N(result >> 15);
         } break;
         case INSTRUCTION_ADD_SUBTRACT: {
-            DEBUG_PRINT("INSTRUCTION_ADD_SUBTRACT, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ADD_SUBTRACT, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            u16 first_value = (u16)cpu.r[decoded_instruction.rs];
-            u16 second_value = (u16)((decoded_instruction.I) ? decoded_instruction.rn : cpu.r[decoded_instruction.rn]);
+            u16 first_value = (u16)(*get_register(cpu, decoded_instruction.rs));
+            u16 second_value = (u16)((decoded_instruction.I) ? decoded_instruction.rn : *get_register(cpu, decoded_instruction.rn));
             u16 result = 0;
             if (decoded_instruction.op) {
                 result = (u16)(first_value - second_value);
@@ -355,7 +358,8 @@ thumb_execute()
                 result = (u16)(first_value + second_value);
             }
 
-            cpu.r[decoded_instruction.rd] = result;
+            u32 *rd_register = get_register(cpu, decoded_instruction.rd);
+            *rd_register = result;
 
             u8 overflow = (result < first_value) ? 1 : 0;
 
@@ -365,26 +369,26 @@ thumb_execute()
             set_condition_N(result >> 15);
         } break;
         case INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE: {
-            DEBUG_PRINT("INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             u32 result = 0;
-            u32 old_value = cpu.r[decoded_instruction.rd];
+            u32 old_value = *get_register(cpu, decoded_instruction.rd);
 
             switch (decoded_instruction.op) {
                 case 0: { // MOV
                     result = decoded_instruction.offset;
-                    cpu.r[decoded_instruction.rd] = result;
+                    *get_register(cpu, decoded_instruction.rd) = result;
                 } break;
                 case 1: { // CMP
-                    result = cpu.r[decoded_instruction.rd] - decoded_instruction.offset;
+                    result = *get_register(cpu, decoded_instruction.rd) - decoded_instruction.offset;
                 } break;
                 case 2: { // ADD
-                    result = cpu.r[decoded_instruction.rd] + decoded_instruction.offset;
-                    cpu.r[decoded_instruction.rd] = result;
+                    result = *get_register(cpu, decoded_instruction.rd) + decoded_instruction.offset;
+                    *get_register(cpu, decoded_instruction.rd) = result;
                 } break;
                 case 3: { // SUB
-                    result = cpu.r[decoded_instruction.rd] - decoded_instruction.offset;
-                    cpu.r[decoded_instruction.rd] = result;
+                    result = *get_register(cpu, decoded_instruction.rd) - decoded_instruction.offset;
+                    *get_register(cpu, decoded_instruction.rd) = result;
                 } break;
             }
 
@@ -397,7 +401,7 @@ thumb_execute()
             set_condition_N(result >> 31); // TODO: check the shift
         } break;
         case INSTRUCTION_ALU_OPERATIONS: {
-            DEBUG_PRINT("INSTRUCTION_ALU_OPERATIONS, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ALU_OPERATIONS, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             u8 rd = decoded_instruction.rd;
             u8 rs = decoded_instruction.rs;
@@ -407,114 +411,114 @@ thumb_execute()
 
             switch (decoded_instruction.op) {
                 case 0: { // AND
-                    result = cpu.r[rd] & cpu.r[rs];
+                    result = *get_register(cpu, rd) & *get_register(cpu, rs);
                     store_result = true;
                 } break;
                 case 1: { // EOR
-                    result = cpu.r[rd] ^ cpu.r[rs];
+                    result = *get_register(cpu, rd) ^ *get_register(cpu, rs);
                     store_result = true;
                 } break;
                 case 2: { // LSL
-                    result = cpu.r[rd] << cpu.r[rs];
+                    result = *get_register(cpu, rd) << *get_register(cpu, rs);
                     store_result = true;
 
-                    if (cpu.r[rs]) {
+                    if (*get_register(cpu, rs)) {
                         set_condition_C((result >> 31) & 1);
                     }
                 } break;
                 case 3: { // LSR
-                    if (cpu.r[rs]) {
-                        set_condition_C((cpu.r[rd] >> (cpu.r[rs] - 1)) & 1);
+                    if (*get_register(cpu, rs)) {
+                        set_condition_C((*get_register(cpu, rd) >> (*get_register(cpu, rs) - 1)) & 1);
                     }
 
-                    result = cpu.r[rd] >> cpu.r[rs];
+                    result = *get_register(cpu, rd) >> *get_register(cpu, rs);
                     store_result = true;
                 } break;
                 case 4: { // ASR
-                    if (cpu.r[rs]) {
-                        set_condition_C((cpu.r[rd] >> (cpu.r[rs] - 1)) & 1);
+                    if (*get_register(cpu, rs)) {
+                        set_condition_C((*get_register(cpu, rd) >> (*get_register(cpu, rs) - 1)) & 1);
                     }
 
-                    u8 shift = cpu.r[rs] & 0xFF;
-                    u8 msb = (cpu.r[rd] >> 31) & 1;
+                    u8 shift = *get_register(cpu, rs) & 0xFF;
+                    u8 msb = (*get_register(cpu, rd) >> 31) & 1;
                     u32 msb_replicated = (-msb << (32 - shift));
 
-                    result = (cpu.r[rd] >> shift) | msb_replicated;
+                    result = (*get_register(cpu, rd) >> shift) | msb_replicated;
                     store_result = true;
                 } break;
                 case 5: { // ADC
-                    result = (cpu.r[rd] + cpu.r[rs] + CONDITION_C);
+                    result = (*get_register(cpu, rd) + *get_register(cpu, rs) + CONDITION_C);
                     store_result = true;
 
-                    set_condition_C(result < cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result < cpu.r[rd]);
+                    set_condition_C(result < *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result < *get_register(cpu, rd));
                 } break;
                 case 6: { // SBC
-                    result = (cpu.r[rd] - cpu.r[rs] - !(CONDITION_C));
+                    result = (*get_register(cpu, rd) - *get_register(cpu, rs) - !(CONDITION_C));
                     store_result = true;
 
-                    set_condition_C(result > cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result > cpu.r[rd]);
+                    set_condition_C(result > *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result > *get_register(cpu, rd));
                 } break;
                 case 7: { // ROR
-                    if ((cpu.r[rs] & 0xF) == 0) {
-                        set_condition_C((cpu.r[rd] >> 31) & 1);
+                    if ((*get_register(cpu, rs) & 0xF) == 0) {
+                        set_condition_C((*get_register(cpu, rd) >> 31) & 1);
                     } else {
-                        set_condition_C((cpu.r[rd] >> (((cpu.r[rs] & 0xF) - 1)) & 1));
+                        set_condition_C((*get_register(cpu, rd) >> (((*get_register(cpu, rs) & 0xF) - 1)) & 1));
                     }
 
-                    u8 shift = cpu.r[rs] & 0xFF;
-                    u32 value_to_rotate = cpu.r[rd] & ((1 << shift) - 1);
+                    u8 shift = *get_register(cpu, rs) & 0xFF;
+                    u32 value_to_rotate = *get_register(cpu, rd) & ((1 << shift) - 1);
                     u32 rotate_masked = value_to_rotate << (32 - shift);
 
-                    result = (cpu.r[rd] >> shift) | rotate_masked;
+                    result = (*get_register(cpu, rd) >> shift) | rotate_masked;
                     store_result = true;
                 } break;
                 case 8: { // TST
-                    result = cpu.r[rd] & cpu.r[rs];
+                    result = *get_register(cpu, rd) & *get_register(cpu, rs);
                     store_result = false;
                 } break;
                 case 9: { // NEG
-                    result = (u32)(-(s32)cpu.r[rs]);
+                    result = (u32)(-(s32)*get_register(cpu, rs));
                     store_result = true;
 
-                    set_condition_C(result > cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result > cpu.r[rd]);
+                    set_condition_C(result > *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result > *get_register(cpu, rd));
                 } break;
                 case 10: { // CMP
-                    result = cpu.r[rd] - cpu.r[rs];
+                    result = *get_register(cpu, rd) - *get_register(cpu, rs);
                     store_result = false;
 
-                    set_condition_C(result > cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result > cpu.r[rd]);
+                    set_condition_C(result > *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result > *get_register(cpu, rd));
                 } break;
                 case 11: { // CMN
-                    result = cpu.r[rd] + cpu.r[rs];
+                    result = *get_register(cpu, rd) + *get_register(cpu, rs);
                     store_result = false;
 
-                    set_condition_C(result < cpu.r[rd]); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result < cpu.r[rd]);
+                    set_condition_C(result < *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
+                    set_condition_V(result < *get_register(cpu, rd));
                 } break;
                 case 12: { // ORR
-                    result = cpu.r[rd] | cpu.r[rs];
+                    result = *get_register(cpu, rd) | *get_register(cpu, rs);
                     store_result = true;
                 } break;
                 case 13: { // MUL
-                    result = cpu.r[rd] * cpu.r[rs];
+                    result = *get_register(cpu, rd) * *get_register(cpu, rs);
                     store_result = true;
                 } break;
                 case 14: { // BIC
-                    result = cpu.r[rd] & !cpu.r[rs];
+                    result = *get_register(cpu, rd) & !*get_register(cpu, rs);
                     store_result = true;
                 } break;
                 case 15: { // MVN
-                    result = !cpu.r[rs];
+                    result = !*get_register(cpu, rs);
                     store_result = true;
                 } break;
             }
 
             if (store_result) {
-                cpu.r[rd] = result;
+                *get_register(cpu, rd) = result;
             }
             
             set_condition_N((result >> 31) & 1);
@@ -522,7 +526,7 @@ thumb_execute()
 
         } break;
         case INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE: {
-            DEBUG_PRINT("INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_HI_REGISTER_OPERATIONS_BRANCH_EXCHANGE, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             // H1 and H2 are flags to use the register as a Hi register (in the range of 8-15).
             // H1 for rd; H2 for rs.
@@ -540,11 +544,11 @@ thumb_execute()
 
             switch (op) {
                 case 0: { // ADD
-                    cpu.r[rd] += cpu.r[rs];
+                    *get_register(cpu, rd) += *get_register(cpu, rs);
                 } break;
                 case 1: { // CMP
-                    u32 old_value = cpu.r[rd];
-                    u32 result = cpu.r[rd] - cpu.r[rs];
+                    u32 old_value = *get_register(cpu, rd);
+                    u32 result = *get_register(cpu, rd) - *get_register(cpu, rs);
                     
                     u8 overflow = (result < old_value) ? 1 : 0;
                     
@@ -554,12 +558,12 @@ thumb_execute()
                     set_condition_N(result >> 31); // TODO: check the shift
                 } break;
                 case 2: { // MOV
-                    cpu.r[rd] = cpu.r[rs];
+                    *get_register(cpu, rd) = *get_register(cpu, rs);
                 } break;
                 case 3: { // BX
-                    cpu.pc = cpu.r[rs] & (-2);
+                    cpu.pc = *get_register(cpu, rs) & (-2);
 
-                    u8 thumb_mode = cpu.r[rs] & 1;
+                    u8 thumb_mode = *get_register(cpu, rs) & 1;
                     set_control_bit_T(thumb_mode);
 
                     current_instruction = 0;
@@ -567,72 +571,72 @@ thumb_execute()
             }
         } break;
         case INSTRUCTION_PC_RELATIVE_LOAD: {
-            DEBUG_PRINT("INSTRUCTION_PC_RELATIVE_LOAD, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_PC_RELATIVE_LOAD, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             u32 base = (((cpu.pc - 2) & -2) + (decoded_instruction.offset << 2));   // TODO: in mGBA this computes the value, but the data sheet says the PC is 4 bytes ahead of this instruction.
                                                                                     // Let's see why this works.
             // u32 base = ((cpu.pc & -2) + (decoded_instruction.offset << 2));
             u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
 
-            cpu.r[decoded_instruction.rd] = *address;
+            *get_register(cpu, decoded_instruction.rd) = *address;
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             assert(!"Implement");
         } break;
         case INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             assert(!"Implement");
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            u32 base = cpu.r[decoded_instruction.rb] + (decoded_instruction.offset << 2);
+            u32 base = *get_register(cpu, decoded_instruction.rb) + (decoded_instruction.offset << 2);
             if (decoded_instruction.B) {
                 u8 *address = get_memory_at(cpu, &memory, base);
                 if (decoded_instruction.L) {
-                    cpu.r[decoded_instruction.rd] = (u32)*address;
+                    *get_register(cpu, decoded_instruction.rd) = (u32)*address;
                 } else {
-                    *address = (u8)cpu.r[decoded_instruction.rd];
+                    *address = (u8)*get_register(cpu, decoded_instruction.rd);
                 }
             } else {
                 u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
                 if (decoded_instruction.L) {
-                    cpu.r[decoded_instruction.rd] = *address;
+                    *get_register(cpu, decoded_instruction.rd) = *address;
                 } else {
-                    *address = cpu.r[decoded_instruction.rd];
+                    *address = *get_register(cpu, decoded_instruction.rd);
                 }
             }
 
         } break;
         case INSTRUCTION_LOAD_STORE_HALFWORD: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_HALFWORD, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_STORE_HALFWORD, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            u32 base = cpu.r[decoded_instruction.rb] + (decoded_instruction.offset << 1);
+            u32 base = *get_register(cpu, decoded_instruction.rb) + (decoded_instruction.offset << 1);
             u16 *address = (u16 *)get_memory_at(cpu, &memory, base);
             if (decoded_instruction.L) {
-                cpu.r[decoded_instruction.rd] = (u32)*address; // Cast to u32 to fill high bits with 0.
+                *get_register(cpu, decoded_instruction.rd) = (u32)*address; // Cast to u32 to fill high bits with 0.
             } else {
-                *address = (u16)cpu.r[decoded_instruction.rd];
+                *address = (u16)*get_register(cpu, decoded_instruction.rd);
             }
         } break;
         case INSTRUCTION_SP_RELATIVE_LOAD_STORE: {
-            DEBUG_PRINT("INSTRUCTION_SP_RELATIVE_LOAD_STORE, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SP_RELATIVE_LOAD_STORE, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             u32 base = cpu.sp + (decoded_instruction.offset << 2);
             u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
             if (decoded_instruction.L) {
-                cpu.r[decoded_instruction.rd] = *address;
+                *get_register(cpu, decoded_instruction.rd) = *address;
             } else {
-                *address = cpu.r[decoded_instruction.rd];
+                *address = *get_register(cpu, decoded_instruction.rd);
             }
         } break;
         case INSTRUCTION_LOAD_ADDRESS: {
-            DEBUG_PRINT("INSTRUCTION_LOAD_ADDRESS, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LOAD_ADDRESS, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             assert(!"Implement");
         } break;
         case INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER: {
-            DEBUG_PRINT("INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             s8 sign = decoded_instruction.S ? -1 : 1;
             int offset = sign * (decoded_instruction.offset << 2);
@@ -640,7 +644,7 @@ thumb_execute()
             cpu.sp += offset;
         } break;
         case INSTRUCTION_PUSH_POP_REGISTERS: {
-            DEBUG_PRINT("INSTRUCTION_PUSH_POP_REGISTERS, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_PUSH_POP_REGISTERS, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             u8 register_list = (u8)decoded_instruction.register_list;
             u32 sp = cpu.sp;
@@ -668,7 +672,7 @@ thumb_execute()
                     if (decoded_instruction.L) {
                         // Load
                         u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
-                        cpu.r[register_index] = *address;
+                        *get_register(cpu, (u8)register_index) = *address;
 
                         sp += 4;
                     } else {
@@ -676,7 +680,7 @@ thumb_execute()
                         sp -= 4;
 
                         u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
-                        *address = cpu.r[register_index];
+                        *address = *get_register(cpu, (u8)register_index);
                     }
                 }
 
@@ -687,18 +691,18 @@ thumb_execute()
             cpu.sp = sp;
         } break;
         case INSTRUCTION_MULTIPLE_LOAD_STORE: {
-            DEBUG_PRINT("INSTRUCTION_MULTIPLE_LOAD_STORE, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MULTIPLE_LOAD_STORE, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             assert(!"Implement");
         } break;
         case INSTRUCTION_CONDITIONAL_BRANCH: {
-            DEBUG_PRINT("INSTRUCTION_CONDITIONAL_BRANCH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_CONDITIONAL_BRANCH, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             assert(!"Implement");
         } break;
         case INSTRUCTION_SOFTWARE_INTERRUPT: {
-            DEBUG_PRINT("INSTRUCTION_SOFTWARE_INTERRUPT, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SOFTWARE_INTERRUPT, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            cpu.lr = decoded_instruction.address + 2; // Next instruction
-            cpu.spsr = cpu.cpsr;
+            cpu.r14_svc = decoded_instruction.address + 2; // Next instruction
+            cpu.spsr_svc = cpu.cpsr;
 
             set_mode(MODE_SUPERVISOR);
             set_control_bit_T(0); // Execute in ARM state
@@ -709,7 +713,7 @@ thumb_execute()
             current_instruction = 0;
         } break;
         case INSTRUCTION_UNCONDITIONAL_BRANCH: {
-            DEBUG_PRINT("INSTRUCTION_UNCONDITIONAL_BRANCH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_UNCONDITIONAL_BRANCH, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             u32 offset = left_shift_sign_extended(decoded_instruction.offset, 11, 1);
             cpu.pc += offset;
@@ -717,7 +721,7 @@ thumb_execute()
             current_instruction = 0;
         } break;
         case INSTRUCTION_LONG_BRANCH_WITH_LINK: {
-            DEBUG_PRINT("INSTRUCTION_LONG_BRANCH_WITH_LINK, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LONG_BRANCH_WITH_LINK, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             if (decoded_instruction.H == 0) {
                 // First part of the instruction
@@ -921,24 +925,23 @@ process_branch()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_B: {
-            DEBUG_PRINT("INSTRUCTION_B, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_B, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             if (decoded_instruction.L) {
-                cpu.lr = decoded_instruction.address + 4;
+                cpu.lr = cpu.pc - 4;
             }
 
-            // cpu.pc += (decoded_instruction.offset << 2);
             cpu.pc += left_shift_sign_extended(decoded_instruction.offset, 24, 2);
 
             current_instruction = 0;
         } break;
 
         case INSTRUCTION_BX: {
-            DEBUG_PRINT("INSTRUCTION_BX, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_BX, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            cpu.pc = cpu.r[decoded_instruction.rn] & (-2); // NOTE: PC must be 16-bit align. This clears out the lsb (-2 is 0b1110).
+            cpu.pc = *get_register(cpu, decoded_instruction.rn) & (-2); // NOTE: PC must be 16-bit align. This clears out the lsb (-2 is 0b1110).
 
-            u8 thumb_mode = cpu.r[decoded_instruction.rn] & 1;
+            u8 thumb_mode = *get_register(cpu, decoded_instruction.rn) & 1;
             set_control_bit_T(thumb_mode);
 
             current_instruction = 0;
@@ -949,6 +952,16 @@ process_branch()
             assert(!"Invalid instruction type for category");
         }
     }
+}
+
+
+static u32
+rotate_right(u32 value, u32 shift)
+{
+    u32 value_to_rotate = value & ((1 << shift) - 1);
+    u32 rotate_masked = value_to_rotate << (32 - shift);
+
+    return (value >> shift) | rotate_masked;
 }
 
 static u32
@@ -975,11 +988,8 @@ apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
         } break;
         case SHIFT_TYPE_ROTATE_RIGHT: {
             *carry = (value >> (shift - 1) & 1);
-            
-            u32 value_to_rotate = value & ((1 << shift) - 1);
-            u32 rotate_masked = value_to_rotate << (32 - shift);
 
-            return (value >> shift) | rotate_masked;
+            return rotate_right(value, shift);
         } break;
     }
 
@@ -1004,18 +1014,18 @@ process_data_processing()
 
         second_operand = apply_shift(imm, rotate, shift_type, &carry);
     } else {
-        int rm = decoded_instruction.second_operand & 0xF;
+        u8 rm = decoded_instruction.second_operand & 0xF;
         u8 shift = (decoded_instruction.second_operand >> 4) & 0xFF;
         shift_type = (ShiftType)((shift >> 1) & 0b11);
         if (shift & 1) {
             // Shift register
             u8 rs = (shift >> 4) & 0xF; // Register to the value to shift.
-            shift_value = (u8)(cpu.r[rs] & 0xF);
-            second_operand = apply_shift(cpu.r[rm], shift_value, shift_type, &carry);
+            shift_value = (u8)(*get_register(cpu, rs) & 0xF);
+            second_operand = apply_shift(*get_register(cpu, rm), shift_value, shift_type, &carry);
         } else {
             // Shift amount
             shift_value = (shift >> 3) & 0b11111;
-            second_operand = apply_shift(cpu.r[rm], shift_value, shift_type, &carry);
+            second_operand = apply_shift(*get_register(cpu, rm), shift_value, shift_type, &carry);
         }
     }
 
@@ -1025,97 +1035,97 @@ process_data_processing()
     
     switch (decoded_instruction.type) {
         case INSTRUCTION_ADD: {
-            DEBUG_PRINT("INSTRUCTION_ADD, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ADD, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = cpu.r[decoded_instruction.rn] + second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) + second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_AND: {
-            DEBUG_PRINT("INSTRUCTION_AND, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_AND, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = cpu.r[decoded_instruction.rn] & second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) & second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_EOR: {
-            DEBUG_PRINT("INSTRUCTION_EOR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_EOR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = cpu.r[decoded_instruction.rn] ^ second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) ^ second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_SUB: {
-            DEBUG_PRINT("INSTRUCTION_SUB, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SUB, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = cpu.r[decoded_instruction.rn] - second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) - second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_RSB: {
-            DEBUG_PRINT("INSTRUCTION_RSB, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_RSB, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = second_operand - cpu.r[decoded_instruction.rn];
+            result = second_operand - *get_register(cpu, decoded_instruction.rn);
             store_result = true;
         } break;
         case INSTRUCTION_ADC: {
-            DEBUG_PRINT("INSTRUCTION_ADC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ADC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = cpu.r[decoded_instruction.rn] & second_operand + carry;
+            result = *get_register(cpu, decoded_instruction.rn) & second_operand + carry;
             store_result = true;
         } break;
         case INSTRUCTION_SBC: {
-            DEBUG_PRINT("INSTRUCTION_SBC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SBC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = cpu.r[decoded_instruction.rn] - second_operand + carry - 1;
+            result = *get_register(cpu, decoded_instruction.rn) - second_operand + carry - 1;
             store_result = true;
         } break;
         case INSTRUCTION_RSC: {
-            DEBUG_PRINT("INSTRUCTION_RSC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_RSC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = second_operand - cpu.r[decoded_instruction.rn] + carry - 1;
+            result = second_operand - *get_register(cpu, decoded_instruction.rn) + carry - 1;
             store_result = true;
         } break;
         case INSTRUCTION_TST: {
-            DEBUG_PRINT("INSTRUCTION_TST, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_TST, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = cpu.r[decoded_instruction.rn] & second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) & second_operand;
             store_result = false;
         } break;
         case INSTRUCTION_TEQ: {
-            DEBUG_PRINT("INSTRUCTION_TEQ, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_TEQ, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = cpu.r[decoded_instruction.rn] ^ second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) ^ second_operand;
             store_result = false;
         } break;
         case INSTRUCTION_CMP: {
-            DEBUG_PRINT("INSTRUCTION_CMP, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_CMP, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = cpu.r[decoded_instruction.rn] - second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) - second_operand;
             store_result = false;
         } break;
         case INSTRUCTION_CMN: {
-            DEBUG_PRINT("INSTRUCTION_CMN, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_CMN, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = cpu.r[decoded_instruction.rn] + second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) + second_operand;
             store_result = false;
         } break;
         case INSTRUCTION_ORR: {
-            DEBUG_PRINT("INSTRUCTION_ORR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_ORR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = cpu.r[decoded_instruction.rn] | second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) | second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_MOV: {
-            DEBUG_PRINT("INSTRUCTION_MOV, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MOV, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             result = second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_BIC: {
-            DEBUG_PRINT("INSTRUCTION_BIC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_BIC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = cpu.r[decoded_instruction.rn] & !second_operand;
+            result = *get_register(cpu, decoded_instruction.rn) & !second_operand;
             store_result = true;
         } break;
         case INSTRUCTION_MVN: {
-            DEBUG_PRINT("INSTRUCTION_MVN, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MVN, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             result = !second_operand;
             store_result = true;
@@ -1148,7 +1158,7 @@ process_data_processing()
     }
     
     if (store_result) {
-        cpu.r[decoded_instruction.rd] = result;
+        *get_register(cpu, decoded_instruction.rd) = result;
     }
 }
 
@@ -1157,21 +1167,21 @@ process_psr_transfer()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_MRS: {
-            DEBUG_PRINT("INSTRUCTION_MRS, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MRS, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
             u32 sr = cpu.cpsr;
             if (decoded_instruction.P) {
-                sr = cpu.spsr;
+                sr = *(get_spsr_current_mode(cpu));
             }
 
-            cpu.r[decoded_instruction.rd] = sr;
+            *get_register(cpu, decoded_instruction.rd) = sr;
         } break;
         case INSTRUCTION_MSR: {
-            DEBUG_PRINT("INSTRUCTION_MSR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MSR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             u32 *sr = &cpu.cpsr;
             if (decoded_instruction.P) {
-                sr = &cpu.spsr;
+                sr = get_spsr_current_mode(cpu);
             }
 
             if (decoded_instruction.I) {
@@ -1185,7 +1195,7 @@ process_psr_transfer()
                 u32 value = apply_shift(imm, rotate, SHIFT_TYPE_ROTATE_RIGHT, &carry);
                 *sr = value;
             } else {
-                *sr = cpu.r[decoded_instruction.rm];
+                *sr = *get_register(cpu, decoded_instruction.rm);
             }
         } break;
 
@@ -1200,22 +1210,22 @@ process_multiply()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_MUL: {
-            DEBUG_PRINT("INSTRUCTION_MUL, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MUL, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_MLA: {
-            DEBUG_PRINT("INSTRUCTION_MLA, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MLA, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_MULL: {
-            DEBUG_PRINT("INSTRUCTION_MULL, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MULL, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_MLAL: {
-            DEBUG_PRINT("INSTRUCTION_MLAL, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MLAL, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
@@ -1238,18 +1248,18 @@ process_multiply()
 static void
 process_single_data_transfer()
 {
-    u32 base = cpu.r[decoded_instruction.rn];
+    u32 base = *get_register(cpu, decoded_instruction.rn);
     u16 offset;
 
     if (decoded_instruction.I) {
         u8 carry;
-        u32 offset_register = cpu.r[decoded_instruction.offset & 0xF];
+        u32 offset_register = *get_register(cpu, decoded_instruction.offset & 0xF);
         u8 shift = (decoded_instruction.offset >> 4) & 0xFF;
         u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
         if (shift & 1) {
             // Shift register
             u8 rs = (shift >> 4) & 0xF ; // Register to the value to shift.
-            offset = (u16)apply_shift(offset_register, (u8)(cpu.r[rs] & 0xF), shift_type, &carry);
+            offset = (u16)apply_shift(offset_register, (u8)(*get_register(cpu, rs) & 0xF), shift_type, &carry);
         } else {
             // Shift amount
             u8 shift_amount = (shift >> 3) & 0b11111;
@@ -1262,40 +1272,50 @@ process_single_data_transfer()
     
     switch (decoded_instruction.type) {
         case INSTRUCTION_LDR: {
-            DEBUG_PRINT("INSTRUCTION_LDR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             // TODO: check the un-align load (offset by 2)
-
+            // TODO: continue from here... Read the Architecture Reference Manual to see if there is something wrong.
+            //       This is the first instruction in the BIOS that modify the r12 register (used by BX in 0x16C that fails).
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
                 u8 *address = get_memory_at(cpu, &memory, base);
-
+                u8 rotate_value = 8 * (base & 0b11);
+                
                 // Store data
                 if (decoded_instruction.B) {
-                    cpu.r[decoded_instruction.rd] = *((u8 *)((u32 *)address));
+                    *get_register(cpu, decoded_instruction.rd) = rotate_right((u32)(*address), rotate_value);
                 } else {
-                    cpu.r[decoded_instruction.rd] = *((u32 *)address);
+                    *get_register(cpu, decoded_instruction.rd) = rotate_right(*((u32 *)address), rotate_value);
                 }
 
                 if (decoded_instruction.W) {
-                    cpu.r[decoded_instruction.rn] = base;
+                    *get_register(cpu, decoded_instruction.rn) = base;
                 }
             } else {
                 u8 *address = get_memory_at(cpu, &memory, base);
+                u8 rotate_value = 8 * (base & 0b11);
 
                 // Store data
                 if (decoded_instruction.B) {
-                    cpu.r[decoded_instruction.rd] = *((u8 *)((u32 *)address));
+                    *get_register(cpu, decoded_instruction.rd) = rotate_right((u32)(*address), rotate_value);
                 } else {
-                    cpu.r[decoded_instruction.rd] = *((u32 *)address);
+                    *get_register(cpu, decoded_instruction.rd) = rotate_right(*((u32 *)address), rotate_value);
                 }
 
                 UPDATE_BASE_OFFSET();
-                cpu.r[decoded_instruction.rn] = base;
+                *get_register(cpu, decoded_instruction.rn) = base;
+            }
+
+            if (decoded_instruction.rd == 15) {
+                *get_register(cpu, decoded_instruction.rd) &= 0xFFFFFFFC; // NOTE: From "ARM Architecture Reference Manual"
+
+                // PC written, so it has to branch to that instruction and invalidate whatever the pre-fetched was.
+                current_instruction = 0;
             }
             
         } break;
         case INSTRUCTION_STR: {
-            DEBUG_PRINT("INSTRUCTION_STR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
@@ -1303,26 +1323,26 @@ process_single_data_transfer()
 
                 // Store data
                 if (decoded_instruction.B) {
-                    *((u32 *)address) = (u8)cpu.r[decoded_instruction.rd];
+                    *((u32 *)address) = (u8)*get_register(cpu, decoded_instruction.rd);
                 } else {
-                    *((u32 *)address) = cpu.r[decoded_instruction.rd];
+                    *((u32 *)address) = *get_register(cpu, decoded_instruction.rd);
                 }
 
                 if (decoded_instruction.W) {
-                    cpu.r[decoded_instruction.rn] = base;
+                    *get_register(cpu, decoded_instruction.rn) = base;
                 }
             } else {
                 u8 *address = get_memory_at(cpu, &memory, base);
 
                 // Store data
                 if (decoded_instruction.B) {
-                    *((u32 *)address) = (u8)cpu.r[decoded_instruction.rd];
+                    *((u32 *)address) = (u8)*get_register(cpu, decoded_instruction.rd);
                 } else {
-                    *((u32 *)address) = cpu.r[decoded_instruction.rd];
+                    *((u32 *)address) = *get_register(cpu, decoded_instruction.rd);
                 }
 
                 UPDATE_BASE_OFFSET();
-                cpu.r[decoded_instruction.rn] = base;
+                *get_register(cpu, decoded_instruction.rn) = base;
             }
 
         } break;
@@ -1339,143 +1359,135 @@ process_halfword_and_signed_data_transfer()
     switch (decoded_instruction.type) {
         // Halfword and signed data transfer
         case INSTRUCTION_LDRH_IMM: {
-            DEBUG_PRINT("INSTRUCTION_LDRH_IMM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRH_IMM, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_STRH_IMM: {
-            DEBUG_PRINT("INSTRUCTION_STRH_IMM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STRH_IMM, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_LDRSB_IMM: {
-            DEBUG_PRINT("INSTRUCTION_LDRSB_IMM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRSB_IMM, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_LDRSH_IMM: {
-            DEBUG_PRINT("INSTRUCTION_LDRSH_IMM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRSH_IMM, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
 
         case INSTRUCTION_LDRH: {
-            DEBUG_PRINT("INSTRUCTION_LDRH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRH, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            int base = cpu.r[decoded_instruction.rn];
-            int offset = cpu.r[decoded_instruction.rm];
+            int base = *get_register(cpu, decoded_instruction.rn);
+            int offset = *get_register(cpu, decoded_instruction.rm);
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
                 u8 *address = get_memory_at(cpu, &memory, base);
-                // u8 *address = memory.iwram + base;
-                cpu.r[decoded_instruction.rd] = *((u16 *)address);
+                *get_register(cpu, decoded_instruction.rd) = *((u16 *)address);
 
                 if (decoded_instruction.W) {
-                    cpu.r[decoded_instruction.rn] = base;
+                    *get_register(cpu, decoded_instruction.rn) = base;
                 }
             } else {
                 u8 *address = get_memory_at(cpu, &memory, base);
-                // u8 *address = memory.iwram + base;
-                cpu.r[decoded_instruction.rd] = *((u16 *)address);
+                *get_register(cpu, decoded_instruction.rd) = *((u16 *)address);
 
                 UPDATE_BASE_OFFSET();
-                cpu.r[decoded_instruction.rn] = base;
+                *get_register(cpu, decoded_instruction.rn) = base;
             }
 
         } break;
         case INSTRUCTION_STRH: {
-            DEBUG_PRINT("INSTRUCTION_STRH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STRH, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            int base = cpu.r[decoded_instruction.rn];
-            int offset = cpu.r[decoded_instruction.rm];
+            int base = *get_register(cpu, decoded_instruction.rn);
+            int offset = *get_register(cpu, decoded_instruction.rm);
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
                 u8 *address = get_memory_at(cpu, &memory, base);
-                // u8 *address = memory.iwram + base;
-                *((u16 *)address) = (u16)cpu.r[decoded_instruction.rd];
+                *((u16 *)address) = (u16)*get_register(cpu, decoded_instruction.rd);
 
                 if (decoded_instruction.W) {
-                    cpu.r[decoded_instruction.rn] = base;
+                    *get_register(cpu, decoded_instruction.rn) = base;
                 }
             } else {
                 u8 *address = get_memory_at(cpu, &memory, base);
-                // u8 *address = memory.iwram + base;
-                *((u16 *)address) = (u16)cpu.r[decoded_instruction.rd];
+                *((u16 *)address) = (u16)*get_register(cpu, decoded_instruction.rd);
 
                 UPDATE_BASE_OFFSET();
-                cpu.r[decoded_instruction.rn] = base;
+                *get_register(cpu, decoded_instruction.rn) = base;
             }
 
         } break;
         case INSTRUCTION_LDRSB: {
-            DEBUG_PRINT("INSTRUCTION_LDRSB, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRSB, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            int base = cpu.r[decoded_instruction.rn];
-            int offset = cpu.r[decoded_instruction.rm];
+            int base = *get_register(cpu, decoded_instruction.rn);
+            int offset = *get_register(cpu, decoded_instruction.rm);
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
                 u8 *memory_region = get_memory_at(cpu, &memory, base);
-                // u8 *memory_region = memory.iwram + base;
                 u8 value = *memory_region;
                 u8 sign = (value >> 7) & 1;
                 u32 value_sign_extended = (((u32)-sign) << 8) | value;
 
-                cpu.r[decoded_instruction.rd] = value_sign_extended;
+                *get_register(cpu, decoded_instruction.rd) = value_sign_extended;
 
                 if (decoded_instruction.W) {
-                    cpu.r[decoded_instruction.rn] = base;
+                    *get_register(cpu, decoded_instruction.rn) = base;
                 }
             } else {
                 u8 *memory_region = get_memory_at(cpu, &memory, base);
-                // u8 *memory_region = memory.iwram + base;
                 u8 value = *memory_region;
                 u8 sign = (value >> 7) & 1;
                 u32 value_sign_extended = (((u32)-sign) << 8) | value;
 
-                cpu.r[decoded_instruction.rd] = value_sign_extended;
+                *get_register(cpu, decoded_instruction.rd) = value_sign_extended;
 
                 UPDATE_BASE_OFFSET();
-                cpu.r[decoded_instruction.rn] = base;
+                *get_register(cpu, decoded_instruction.rn) = base;
             }
 
         } break;
         case INSTRUCTION_LDRSH: {
-            DEBUG_PRINT("INSTRUCTION_LDRSH, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDRSH, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            int base = cpu.r[decoded_instruction.rn];
-            int offset = cpu.r[decoded_instruction.rm];
+            int base = *get_register(cpu, decoded_instruction.rn);
+            int offset = *get_register(cpu, decoded_instruction.rm);
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
 
                 u8 *memory_region = get_memory_at(cpu, &memory, base);
-                // u8 *memory_region = memory.iwram + base;
                 u16 value = *((u16 *)memory_region);
                 u8 sign = (value >> 15) & 1;
                 u32 value_sign_extended = (((u32)-sign) << 16) | value;
 
-                cpu.r[decoded_instruction.rd] = value_sign_extended;
+                *get_register(cpu, decoded_instruction.rd) = value_sign_extended;
 
                 if (decoded_instruction.W) {
-                    cpu.r[decoded_instruction.rn] = base;
+                    *get_register(cpu, decoded_instruction.rn) = base;
                 }
             } else {
                 u8 *memory_region = get_memory_at(cpu, &memory, base);
-                // u8 *memory_region = memory.iwram + base;
                 u16 value = *((u16 *)memory_region);
                 u8 sign = (value >> 15) & 1;
                 u32 value_sign_extended = (((u32)-sign) << 16) | value;
 
-                cpu.r[decoded_instruction.rd] = value_sign_extended;
+                *get_register(cpu, decoded_instruction.rd) = value_sign_extended;
 
                 UPDATE_BASE_OFFSET();
-                cpu.r[decoded_instruction.rn] = base;
+                *get_register(cpu, decoded_instruction.rn) = base;
             }
 
         } break;
@@ -1494,8 +1506,10 @@ process_block_data_transfer()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_LDM: {
-            s32 base_address = cpu.r[decoded_instruction.rn];
+            s32 base_address = *get_register(cpu, decoded_instruction.rn);
             u16 register_list = decoded_instruction.register_list;
+            assert(register_list != 0);
+
             int register_index = (decoded_instruction.U) ? 0 : 15;
             while (register_list) {
                 if (decoded_instruction.U) {
@@ -1506,12 +1520,10 @@ process_block_data_transfer()
                             base_address++;
 
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            // u32 *address = (u32 *)(memory.iwram) + base_address;
-                            cpu.r[register_index] = *address;
+                            *get_register(cpu, (u8)register_index) = *address;
                         } else {
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            // u32 *address = (u32 *)(memory.iwram) + base_address;
-                            cpu.r[register_index] = *address;
+                            *get_register(cpu, (u8)register_index) = *address;
 
                             base_address++;
                         }
@@ -1527,12 +1539,10 @@ process_block_data_transfer()
                             base_address--;
 
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            // u32 *address = (u32 *)(memory.iwram) + base_address;
-                            cpu.r[register_index] = *address;
+                            *get_register(cpu, (u8)register_index) = *address;
                         } else {
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            // u32 *address = (u32 *)(memory.iwram) + base_address;
-                            cpu.r[register_index] = *address;
+                            *get_register(cpu, (u8)register_index) = *address;
 
                             base_address--;
                         }
@@ -1545,15 +1555,17 @@ process_block_data_transfer()
             }
 
             if (decoded_instruction.W) {
-                cpu.r[decoded_instruction.rn] = base_address;
+                *get_register(cpu, decoded_instruction.rn) = base_address;
             }
         } break;
 
         case INSTRUCTION_STM: {
-            DEBUG_PRINT("INSTRUCTION_STM, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STM, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            u32 base_address = cpu.r[decoded_instruction.rn];
+            u32 base_address = *get_register(cpu, decoded_instruction.rn);
             u16 register_list = decoded_instruction.register_list;
+            assert(register_list != 0);
+
             int register_index = (decoded_instruction.U) ? 0 : 15;
             while (register_list) {
                 if (decoded_instruction.U) {
@@ -1564,12 +1576,10 @@ process_block_data_transfer()
                             base_address += 4;
 
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            // u32 *address = (u32 *)(memory.iwram) + base_address;
-                            *address = cpu.r[register_index];
+                            *address = *get_register(cpu, (u8)register_index);
                         } else {
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            // u32 *address = (u32 *)(memory.iwram) + base_address;
-                            *address = cpu.r[register_index];
+                            *address = *get_register(cpu, (u8)register_index);
 
                             base_address += 4;
                         }
@@ -1585,12 +1595,10 @@ process_block_data_transfer()
                             base_address -= 4;
 
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            // u32 *address = (u32 *)(memory.iwram) + base_address;
-                            *address = cpu.r[register_index];
+                            *address = *get_register(cpu, (u8)register_index);
                         } else {
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            // u32 *address = (u32 *)(memory.iwram) + base_address;
-                            *address = cpu.r[register_index];
+                            *address = *get_register(cpu, (u8)register_index);
 
                             base_address -= 4;
                         }
@@ -1603,7 +1611,7 @@ process_block_data_transfer()
             }
 
             if (decoded_instruction.W) {
-                cpu.r[decoded_instruction.rn] = base_address;
+                *get_register(cpu, decoded_instruction.rn) = base_address;
             }
         } break;
 
@@ -1617,7 +1625,7 @@ process_single_data_swap()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_SWP: {
-            DEBUG_PRINT("INSTRUCTION_SWP, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SWP, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
@@ -1634,7 +1642,7 @@ process_software_interrupt()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_SWI: {
-            DEBUG_PRINT("INSTRUCTION_SWI, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_SWI, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
@@ -1651,7 +1659,7 @@ process_coprocessor_data_operations()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_CDP: {
-            DEBUG_PRINT("INSTRUCTION_CDP... Not implemented for now, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_CDP... Not implemented for now, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             // assert(!"Implement");
         } break;
@@ -1668,12 +1676,12 @@ process_coprocessor_data_transfers()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_STC: {
-            DEBUG_PRINT("INSTRUCTION_STC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_STC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_LDC: {
-            DEBUG_PRINT("INSTRUCTION_LDC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_LDC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
@@ -1690,12 +1698,12 @@ process_coprocessor_register_transfers()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_MCR: {
-            DEBUG_PRINT("INSTRUCTION_MCR, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MCR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;
         case INSTRUCTION_MRC: {
-            DEBUG_PRINT("INSTRUCTION_MRC, 0x%X, mode = %s\n", decoded_instruction.address, get_current_mode());
+            DEBUG_PRINT("INSTRUCTION_MRC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             assert(!"Implement");
         } break;

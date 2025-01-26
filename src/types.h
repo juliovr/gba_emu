@@ -35,6 +35,7 @@ typedef int bool;
 typedef struct CPU {
     union {
         struct {
+            // Unbanked registers
             u32 r0;
             u32 r1;
             u32 r2;
@@ -43,6 +44,8 @@ typedef struct CPU {
             u32 r5;
             u32 r6;
             u32 r7;
+            
+            // Banked registers
             u32 r8;
             u32 r9;
             u32 r10;
@@ -56,6 +59,8 @@ typedef struct CPU {
                 u32 r14;
                 u32 lr;
             };
+
+            // Unbanked
             union {
                 u32 r15;
                 u32 pc;
@@ -64,9 +69,65 @@ typedef struct CPU {
         u32 r[16];
     };
 
+    // FIQ Banked registers
+    union {
+        struct {
+            u32 r8_fiq;
+            u32 r9_fiq;
+            u32 r10_fiq;
+            u32 r11_fiq;
+            u32 r12_fiq;
+            u32 r13_fiq;
+            u32 r14_fiq;
+        };
+        u32 r_fiq[8]; // Get using r_fiq[r_number - 8] to get the correct offset.
+    };
+
+    // Supervisor Banked registers
+    union {
+        struct {
+            u32 r13_svc;
+            u32 r14_svc;
+        };
+        u32 r_svc[2]; // Get using r_svc[r_number - 13] to get the correct offset.
+    };
+
+    // Abort Banked registers
+    union {
+        struct {
+            u32 r13_abt;
+            u32 r14_abt;
+        };
+        u32 r_abt[2]; // Get using r_abt[r_number - 13] to get the correct offset.
+    };
+
+    // IRQ Banked registers
+    union {
+        struct {
+            u32 r13_irq;
+            u32 r14_irq;
+        };
+        u32 r_irq[2]; // Get using r_irq[r_number - 13] to get the correct offset.
+    };
+
+    // Undefined Banked registers
+    union {
+        struct {
+            u32 r13_und;
+            u32 r14_und;
+        };
+        u32 r_und[2]; // Get using r_und[r_number - 13] to get the correct offset.
+    };
+
+
     u32 cpsr; // Current Program Status Register
-    u32 spsr; // Saved Program Status Register
-    // TODO: how to store the banked registers.
+    
+    // Saved Program Status Register
+    u32 spsr_fiq;
+    u32 spsr_irq;
+    u32 spsr_svc;
+    u32 spsr_abt;
+    u32 spsr_und;
 } CPU;
 
 #define MODE_USER       (0b10000)
@@ -137,6 +198,76 @@ print_cpu_state(CPU cpu)
 
     printf("\n");
     printf("----------------\n");
+}
+
+
+u32 *
+get_spsr_current_mode(CPU cpu)
+{
+    u8 mode = (cpu.cpsr & 0b11111);
+    switch (mode) {
+        case MODE_FIQ:          return &cpu.spsr_fiq;
+        case MODE_SUPERVISOR:   return &cpu.spsr_svc;
+        case MODE_ABORT:        return &cpu.spsr_abt;
+        case MODE_IRQ:          return &cpu.spsr_irq;
+        case MODE_UNDEFINED:    return &cpu.spsr_und;
+        default: assert("!User and System mode does not have SPSR");
+    }
+
+    return 0;
+}
+
+u32 *
+get_register(CPU cpu, u8 rn)
+{
+    u8 mode = (cpu.cpsr & 0b11111);
+    switch (mode) {
+        case MODE_USER:
+        case MODE_SYSTEM:
+        {
+            return &cpu.r[rn];
+        } break;
+        case MODE_FIQ: {
+            if (rn <= 7 || rn == 15) {
+                return &cpu.r[rn];
+            }
+
+            return &cpu.r_fiq[rn - 8];
+        } break;
+        case MODE_SUPERVISOR: {
+            if (rn <= 12 || rn == 15) {
+                return &cpu.r[rn];
+            }
+
+            return &cpu.r_svc[rn - 13];
+        } break;
+        case MODE_ABORT: {
+            if (rn <= 12 || rn == 15) {
+                return &cpu.r[rn];
+            }
+
+            return &cpu.r_abt[rn - 13];
+        } break;
+        case MODE_IRQ: {
+            if (rn <= 12 || rn == 15) {
+                return &cpu.r[rn];
+            }
+
+            return &cpu.r_irq[rn - 13];
+        } break;
+        case MODE_UNDEFINED: {
+            if (rn <= 12 || rn == 15) {
+                return &cpu.r[rn];
+            }
+
+            return &cpu.r_und[rn - 13];
+        } break;
+
+        default: assert(!"Invalid mode");
+    }
+
+    assert(!"Invalid register number");
+    return 0;
 }
 
 
