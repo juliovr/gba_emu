@@ -1,7 +1,7 @@
 # GBA emu
 This is my attempt to make a GBA emulator without using any tutorials, only by reading documentation.
 
-# Instruction pipeline
+## Instruction pipeline
 ```
 Fetch       Instruction fetched from memory
   |
@@ -14,7 +14,12 @@ Execute     Register(s) read from register bank
             Write register(s) back to register bank
 ```
 
-# References
+## Condition flags
+I had many errors dealing with the differences between C and V flags. Here are the key differences:
+- C flag: Deals with unsigned arithmetic. It is set when there is an overflow in an unsigned sense (carry out of the register). In other words, if the new value does not fit in the register size, this flag is set.
+- V flag: Deals with signed arithmetic. It is set when there is an overflow in the signed result (i.e., the result is incorrectly represented as a signed number due to the register's limits). In other words, if the new value change the 31-bit, that means a sign shifted occured in 2's complement format.
+
+## References
 - [GBATEK](https://problemkaputt.de/gbatek.htm)
 - [ARM7TDMI Reference Manual](https://ww1.microchip.com/downloads/en/DeviceDoc/DDI0029G_7TDMI_R3_trm.pdf)
 - [ARM Architecture Reference Manual](https://www.intel.com/programmable/technical-pdfs/654202.pdf)

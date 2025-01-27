@@ -159,11 +159,13 @@ init_gba()
     memset(&gba_cpu, 0, sizeof(CPU));
     memset(&memory, 0, sizeof(GBAMemory));
 
-    cpu->cpsr = 0x2000001F;
+    cpu->r13 = 0x03007F00;
+    cpu->cpsr = 0x1F;
 
     load_bios_into_memory();
 
-    cpu->pc = 0x08000000;
+    // cpu->pc = 0x08000000;
+    cpu->pc = 0;
 }
 
 /*
@@ -1001,7 +1003,7 @@ apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
 static void
 process_data_processing()
 {
-    u8 carry = 0;
+    u8 carry = 0; // TODO: if the set_condition_C below works well, get rid of this variable.
     u32 second_operand;
     ShiftType shift_type;
     u32 shift_value = 0;
@@ -1034,103 +1036,241 @@ process_data_processing()
 
     bool store_result = false;
     u32 result = 0;
+
+    u32 rn = *get_register(cpu, decoded_instruction.rn);
     
     switch (decoded_instruction.type) {
         case INSTRUCTION_ADD: {
             DEBUG_PRINT("INSTRUCTION_ADD, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = *get_register(cpu, decoded_instruction.rn) + second_operand;
+            result = rn + second_operand;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+            }
         } break;
         case INSTRUCTION_AND: {
             DEBUG_PRINT("INSTRUCTION_AND, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = *get_register(cpu, decoded_instruction.rn) & second_operand;
+            result = rn & second_operand;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+            }
         } break;
         case INSTRUCTION_EOR: {
             DEBUG_PRINT("INSTRUCTION_EOR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = *get_register(cpu, decoded_instruction.rn) ^ second_operand;
+            result = rn ^ second_operand;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+            }
         } break;
         case INSTRUCTION_SUB: {
             DEBUG_PRINT("INSTRUCTION_SUB, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = *get_register(cpu, decoded_instruction.rn) - second_operand;
+            result = rn - second_operand;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C(second_operand <= rn ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+            }
         } break;
         case INSTRUCTION_RSB: {
             DEBUG_PRINT("INSTRUCTION_RSB, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = second_operand - *get_register(cpu, decoded_instruction.rn);
+            result = second_operand - rn;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C(second_operand <= rn ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+            }
         } break;
         case INSTRUCTION_ADC: {
             DEBUG_PRINT("INSTRUCTION_ADC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = *get_register(cpu, decoded_instruction.rn) & second_operand + carry;
+            result = rn & second_operand + carry;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+            }
         } break;
         case INSTRUCTION_SBC: {
             DEBUG_PRINT("INSTRUCTION_SBC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = *get_register(cpu, decoded_instruction.rn) - second_operand + carry - 1;
+            result = rn - second_operand + carry - 1;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C(second_operand <= rn ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+            }
         } break;
         case INSTRUCTION_RSC: {
             DEBUG_PRINT("INSTRUCTION_RSC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = second_operand - *get_register(cpu, decoded_instruction.rn) + carry - 1;
+            result = second_operand - rn + carry - 1;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C(second_operand <= rn ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+            }
         } break;
         case INSTRUCTION_TST: {
             DEBUG_PRINT("INSTRUCTION_TST, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = *get_register(cpu, decoded_instruction.rn) & second_operand;
+            result = rn & second_operand;
             store_result = false;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+            }
         } break;
         case INSTRUCTION_TEQ: {
             DEBUG_PRINT("INSTRUCTION_TEQ, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = *get_register(cpu, decoded_instruction.rn) ^ second_operand;
+            result = rn ^ second_operand;
             store_result = false;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+            }
         } break;
         case INSTRUCTION_CMP: {
             DEBUG_PRINT("INSTRUCTION_CMP, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = *get_register(cpu, decoded_instruction.rn) - second_operand;
+            result = rn - second_operand;
             store_result = false;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C(second_operand <= rn ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+            }
         } break;
         case INSTRUCTION_CMN: {
             DEBUG_PRINT("INSTRUCTION_CMN, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
             
-            result = *get_register(cpu, decoded_instruction.rn) + second_operand;
+            result = rn + second_operand;
             store_result = false;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+            }
         } break;
         case INSTRUCTION_ORR: {
             DEBUG_PRINT("INSTRUCTION_ORR, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = *get_register(cpu, decoded_instruction.rn) | second_operand;
+            result = rn | second_operand;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+            }
         } break;
         case INSTRUCTION_MOV: {
             DEBUG_PRINT("INSTRUCTION_MOV, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             result = second_operand;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+            }
         } break;
         case INSTRUCTION_BIC: {
             DEBUG_PRINT("INSTRUCTION_BIC, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
-            result = *get_register(cpu, decoded_instruction.rn) & !second_operand;
+            result = rn & !second_operand;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+            }
         } break;
         case INSTRUCTION_MVN: {
             DEBUG_PRINT("INSTRUCTION_MVN, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
             result = !second_operand;
             store_result = true;
+
+            if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
+                cpu->cpsr = *get_spsr_current_mode(cpu);
+            } else if (decoded_instruction.S == 1) {
+                set_condition_Z(result == 0);
+                set_condition_N(result >> 31);
+                set_condition_C((result < second_operand) ? 1 : 0);
+            }
         } break;
 
         default: {
@@ -1138,27 +1278,6 @@ process_data_processing()
         }
     }
 
-    // TODO: check these conditions with the ARM Architecture Reference Manual. Verify `each` instruction
-    if (decoded_instruction.S && decoded_instruction.rd != 15) {
-        if (data_processing_types[decoded_instruction.type] == DATA_PROCESSING_LOGICAL) {
-            if (shift_type == SHIFT_TYPE_LOGICAL_LEFT && shift_value == 0) {
-                // NOTE: the C flag will be set to the carry out from the barrel shifter (or preserved when the shift operation is LSL #0).
-            } else {
-                set_condition_C(carry);
-            }
-
-            set_condition_Z(result == 0);
-            set_condition_N(result >> 31);
-        } else {
-            u8 overflow = (result < second_operand) ? 1 : 0;
-
-            set_condition_V(overflow);
-            set_condition_C(carry);
-            set_condition_Z(result == 0);
-            set_condition_N(result >> 31);
-        }
-    }
-    
     if (store_result) {
         *get_register(cpu, decoded_instruction.rd) = result;
     }
@@ -1430,6 +1549,7 @@ process_halfword_and_signed_data_transfer()
         case INSTRUCTION_LDRSB: {
             DEBUG_PRINT("INSTRUCTION_LDRSB, 0x%X, encoding = %s\n", decoded_instruction.address, get_current_instruction_encoding());
 
+            // TODO: continue from here. Check this instruction
             int base = *get_register(cpu, decoded_instruction.rn);
             int offset = *get_register(cpu, decoded_instruction.rm);
 
