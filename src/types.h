@@ -342,7 +342,7 @@ get_memory_at(CPU *cpu, GBAMemory *gba_memory, u32 at)
 #define INSTRUCTION_FORMAT_MULTIPLY_LONG                                (0b0000100000000000000010010000)
 #define INSTRUCTION_FORMAT_SINGLE_DATA_SWAP                             (0b0001000000000000000010010000)
 #define INSTRUCTION_FORMAT_BRANCH_AND_EXCHANGE                          (0b0001001011111111111100010000)
-#define INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET       (0b0000000000000000000010010000)
+#define INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_REGISTER_OFFSET       (0b10010000)
 #define INSTRUCTION_FORMAT_HALFWORD_DATA_TRANSFER_IMMEDIATE_OFFSET      (0b0000010000000000000010010000)
 #define INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER                         (1 << 26)
 #define INSTRUCTION_FORMAT_UNDEFINED                                    ((0b11 << 25) | (1 << 4))
@@ -616,7 +616,6 @@ InstructionCategory instruction_categories[] = {
 typedef struct Instruction {
     InstructionType type;
     Condition condition;
-    u32 address;
     int offset;
     u8 L;
     u8 S;
@@ -647,6 +646,11 @@ typedef struct Instruction {
     u8 H1;
     u8 H2;
     u8 op;
+
+#ifdef _DEBUG
+    u32 address;
+    u32 encoding;
+#endif
 } Instruction;
 
 
