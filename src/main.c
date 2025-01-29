@@ -352,24 +352,25 @@ thumb_execute()
         case INSTRUCTION_ADD_SUBTRACT: {
             DEBUG_PRINT("INSTRUCTION_ADD_SUBTRACT, instruction = 0x%X, address = 0x%X, instruction_set = %s\n", decoded_instruction.encoding, decoded_instruction.address, get_current_instruction_encoding());
             
-            u16 first_value = (u16)(*get_register(cpu, decoded_instruction.rs));
-            u16 second_value = (u16)((decoded_instruction.I) ? decoded_instruction.rn : *get_register(cpu, decoded_instruction.rn));
-            u16 result = 0;
+            u32 first_value = *get_register(cpu, decoded_instruction.rs);
+            u32 second_value = (decoded_instruction.I) ? decoded_instruction.rn : *get_register(cpu, decoded_instruction.rn);
+            u32 result = 0;
             if (decoded_instruction.op) {
-                result = (u16)(first_value - second_value);
+                result = first_value - second_value;
+
+                set_condition_C(second_value <= first_value ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
             } else {
-                result = (u16)(first_value + second_value);
+                result = first_value + second_value;
+
+                set_condition_C((result < second_value) ? 1 : 0);
+                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
             }
 
-            u32 *rd_register = get_register(cpu, decoded_instruction.rd);
-            *rd_register = result;
-
-            u8 overflow = (result < first_value) ? 1 : 0;
-
-            set_condition_V(overflow);
-            // set_condition_C(carry); // TODO: do this
+            *get_register(cpu, decoded_instruction.rd) = result;
+            
             set_condition_Z(result == 0);
-            set_condition_N(result >> 15);
+            set_condition_N(result >> 31);
         } break;
         case INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE: {
             DEBUG_PRINT("INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE, instruction = 0x%X, address = 0x%X, instruction_set = %s\n", decoded_instruction.encoding, decoded_instruction.address, get_current_instruction_encoding());
@@ -390,17 +391,19 @@ thumb_execute()
                 } break;
                 case 2: { // ADD
                     result = *get_register(cpu, decoded_instruction.rd) + decoded_instruction.offset;
-                    *get_register(cpu, decoded_instruction.rd) = result;
 
                     set_condition_C((result < (u32)decoded_instruction.offset) ? 1 : 0);
                     set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                    
+                    *get_register(cpu, decoded_instruction.rd) = result;
                 } break;
                 case 3: { // SUB
                     result = *get_register(cpu, decoded_instruction.rd) - decoded_instruction.offset;
-                    *get_register(cpu, decoded_instruction.rd) = result;
 
                     set_condition_C((u32)decoded_instruction.offset <= *get_register(cpu, decoded_instruction.rd) ? 1 : 0);
                     set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                    
+                    *get_register(cpu, decoded_instruction.rd) = result;
                 } break;
             }
 
