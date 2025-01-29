@@ -384,24 +384,28 @@ thumb_execute()
                 } break;
                 case 1: { // CMP
                     result = *get_register(cpu, decoded_instruction.rd) - decoded_instruction.offset;
+
+                    set_condition_C((u32)decoded_instruction.offset <= *get_register(cpu, decoded_instruction.rd) ? 1 : 0);
+                    set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
                 } break;
                 case 2: { // ADD
                     result = *get_register(cpu, decoded_instruction.rd) + decoded_instruction.offset;
                     *get_register(cpu, decoded_instruction.rd) = result;
+
+                    set_condition_C((result < (u32)decoded_instruction.offset) ? 1 : 0);
+                    set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
                 } break;
                 case 3: { // SUB
                     result = *get_register(cpu, decoded_instruction.rd) - decoded_instruction.offset;
                     *get_register(cpu, decoded_instruction.rd) = result;
+
+                    set_condition_C((u32)decoded_instruction.offset <= *get_register(cpu, decoded_instruction.rd) ? 1 : 0);
+                    set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
                 } break;
             }
 
-
-            u8 overflow = (result < old_value) ? 1 : 0;
-
-            set_condition_V(overflow);
-            // set_condition_C(carry); // TODO: do this
             set_condition_Z(result == 0);
-            set_condition_N(result >> 31); // TODO: check the shift
+            set_condition_N(result >> 31);
         } break;
         case INSTRUCTION_ALU_OPERATIONS: {
             DEBUG_PRINT("INSTRUCTION_ALU_OPERATIONS, instruction = 0x%X, address = 0x%X, instruction_set = %s\n", decoded_instruction.encoding, decoded_instruction.address, get_current_instruction_encoding());
@@ -585,7 +589,29 @@ thumb_execute()
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET: {
             DEBUG_PRINT("INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET, instruction = 0x%X, address = 0x%X, instruction_set = %s\n", decoded_instruction.encoding, decoded_instruction.address, get_current_instruction_encoding());
-            assert(!"Implement");
+            
+            u32 base = *get_register(cpu, decoded_instruction.rb) + *get_register(cpu, decoded_instruction.rm);
+            if (base > *get_register(cpu, decoded_instruction.rb)) {
+                // If the result overflow does not execute the instruction.
+                
+                if (decoded_instruction.L) {
+                    if (decoded_instruction.B) {
+                        u8 *address = get_memory_at(cpu, &memory, base);
+                        *get_register(cpu, decoded_instruction.rd) = (u32)*address;
+                    } else {
+                        u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
+                        *get_register(cpu, decoded_instruction.rd) = *address;
+                    }
+                } else {
+                    if (decoded_instruction.B) {
+                        u8 *address = get_memory_at(cpu, &memory, base);
+                        *address = (u8)*get_register(cpu, decoded_instruction.rd);
+                    } else {
+                        u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
+                        *address = *get_register(cpu, decoded_instruction.rd);
+                    }
+                }
+            }
         } break;
         case INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD: {
             DEBUG_PRINT("INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD, instruction = 0x%X, address = 0x%X, instruction_set = %s\n", decoded_instruction.encoding, decoded_instruction.address, get_current_instruction_encoding());
@@ -840,7 +866,7 @@ thumb_decode()
             .type = INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD,
             .rd = (current_instruction >> 0) & 7,
             .rb = (current_instruction >> 3) & 7,
-            .ro = (current_instruction >> 6) & 7,
+            .rm = (current_instruction >> 6) & 7,
             .S = (current_instruction >> 10) & 1,
             .H = (current_instruction >> 11) & 1,
         };
@@ -850,7 +876,7 @@ thumb_decode()
             .type = INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET,
             .rd = (current_instruction >> 0) & 7,
             .rb = (current_instruction >> 3) & 7,
-            .ro = (current_instruction >> 6) & 7,
+            .rm = (current_instruction >> 6) & 7,
             .B = (current_instruction >> 10) & 1,
             .L = (current_instruction >> 11) & 1,
         };

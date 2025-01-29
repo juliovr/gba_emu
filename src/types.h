@@ -642,7 +642,6 @@ typedef struct Instruction {
     u16 source_operand;
     u8 value_8;
     u8 R;
-    u8 ro;
     u8 H1;
     u8 H2;
     u8 op;
