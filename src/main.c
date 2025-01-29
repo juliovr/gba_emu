@@ -593,7 +593,7 @@ thumb_execute()
             u32 base = *get_register(cpu, decoded_instruction.rb) + *get_register(cpu, decoded_instruction.rm);
             if (base > *get_register(cpu, decoded_instruction.rb)) {
                 // If the result overflow does not execute the instruction.
-                
+
                 if (decoded_instruction.L) {
                     if (decoded_instruction.B) {
                         u8 *address = get_memory_at(cpu, &memory, base);
@@ -725,7 +725,16 @@ thumb_execute()
         } break;
         case INSTRUCTION_CONDITIONAL_BRANCH: {
             DEBUG_PRINT("INSTRUCTION_CONDITIONAL_BRANCH, instruction = 0x%X, address = 0x%X, instruction_set = %s\n", decoded_instruction.encoding, decoded_instruction.address, get_current_instruction_encoding());
-            assert(!"Implement");
+            
+            Condition condition = (Condition)decoded_instruction.condition;
+            bool should_execute = should_execute_instruction(condition);
+
+            if (should_execute) {
+                u32 offset = left_shift_sign_extended(decoded_instruction.offset, 8, 1);
+                cpu->pc += offset;
+
+                current_instruction = 0;
+            }
         } break;
         case INSTRUCTION_SOFTWARE_INTERRUPT: {
             DEBUG_PRINT("INSTRUCTION_SOFTWARE_INTERRUPT, instruction = 0x%X, address = 0x%X, instruction_set = %s\n", decoded_instruction.encoding, decoded_instruction.address, get_current_instruction_encoding());
@@ -791,6 +800,7 @@ thumb_decode()
         };
     }
     else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) == THUMB_INSTRUCTION_FORMAT_SOFTWARE_INTERRUPT) {
+thumb_swi:
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_SOFTWARE_INTERRUPT,
             .value_8 = current_instruction & 0xFF,
@@ -799,9 +809,15 @@ thumb_decode()
     else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_CONDITIONAL_BRANCH) == THUMB_INSTRUCTION_FORMAT_CONDITIONAL_BRANCH) {
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_CONDITIONAL_BRANCH,
-            .value_8 = current_instruction & 0xFF,
+            .offset = current_instruction & 0xFF,
             .condition = (current_instruction >> 8) & 0xF,
         };
+
+        assert(decoded_instruction.condition != 0b1110);
+
+        if (decoded_instruction.condition == 0b1111) {
+            goto thumb_swi;
+        }
     }
     else if ((current_instruction & THUMB_INSTRUCTION_FORMAT_MULTIPLE_LOAD_STORE) == THUMB_INSTRUCTION_FORMAT_MULTIPLE_LOAD_STORE) {
         decoded_instruction = (Instruction) {
