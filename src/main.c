@@ -304,9 +304,9 @@ thumb_execute()
         case INSTRUCTION_MOVE_SHIFTED_REGISTER: {
             u8 rd = decoded_instruction.rd;
             int shift = decoded_instruction.offset;
-            u16 value = (u16)(*get_register(cpu, decoded_instruction.rs));
+            u32 value = *get_register(cpu, decoded_instruction.rs);
             u8 carry = 0;
-            u16 result = 0;
+            u32 result = 0;
             
             switch (decoded_instruction.op) {
                 case THUMB_SHIFT_TYPE_LOGICAL_LEFT: {
@@ -334,29 +334,27 @@ thumb_execute()
             u32 *rd_register = get_register(cpu, rd);
             *rd_register = result;
 
-            u8 overflow = (result < value) ? 1 : 0;
-
-            set_condition_V(overflow);
             set_condition_C(carry);
             set_condition_Z(result == 0);
-            set_condition_N(result >> 15);
+            set_condition_N((result >> 31) & 1);
         } break;
         case INSTRUCTION_ADD_SUBTRACT: {
             u32 first_value = *get_register(cpu, decoded_instruction.rs);
             u32 second_value = (decoded_instruction.I) ? decoded_instruction.rn : *get_register(cpu, decoded_instruction.rn);
             u32 result = 0;
+
+            u32 *rd = get_register(cpu, decoded_instruction.rd);
+
             if (decoded_instruction.op) {
                 result = first_value - second_value;
 
                 set_condition_C(second_value <= first_value ? 1 : 0);
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V((*rd & 0x80000000) != (result & 0x80000000));
             } else {
                 result = first_value + second_value;
 
                 set_condition_C((result < second_value) ? 1 : 0);
-
-                // TODO: fix this
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
 
             *get_register(cpu, decoded_instruction.rd) = result;
@@ -368,37 +366,39 @@ thumb_execute()
             u32 result = 0;
             u32 old_value = *get_register(cpu, decoded_instruction.rd);
 
+            u32 *rd = get_register(cpu, decoded_instruction.rd);
+
             switch (decoded_instruction.op) {
                 case 0: { // MOV
                     result = decoded_instruction.offset;
-                    *get_register(cpu, decoded_instruction.rd) = result;
+                    *rd = result;
                 } break;
                 case 1: { // CMP
-                    result = *get_register(cpu, decoded_instruction.rd) - decoded_instruction.offset;
+                    result = *rd - decoded_instruction.offset;
 
-                    set_condition_C((u32)decoded_instruction.offset <= *get_register(cpu, decoded_instruction.rd) ? 1 : 0);
-                    set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                    set_condition_C((u32)decoded_instruction.offset <= *rd ? 1 : 0);
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 2: { // ADD
-                    result = *get_register(cpu, decoded_instruction.rd) + decoded_instruction.offset;
+                    result = *rd + decoded_instruction.offset;
 
                     set_condition_C((result < (u32)decoded_instruction.offset) ? 1 : 0);
-                    set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     
-                    *get_register(cpu, decoded_instruction.rd) = result;
+                    *rd = result;
                 } break;
                 case 3: { // SUB
-                    result = *get_register(cpu, decoded_instruction.rd) - decoded_instruction.offset;
+                    result = *rd - decoded_instruction.offset;
 
-                    set_condition_C((u32)decoded_instruction.offset <= *get_register(cpu, decoded_instruction.rd) ? 1 : 0);
-                    set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                    set_condition_C((u32)decoded_instruction.offset <= *rd ? 1 : 0);
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     
-                    *get_register(cpu, decoded_instruction.rd) = result;
+                    *rd = result;
                 } break;
             }
 
             set_condition_Z(result == 0);
-            set_condition_N(result >> 31);
+            set_condition_N((result >> 31) & 1);
         } break;
         case INSTRUCTION_ALU_OPERATIONS: {
             u8 rd = decoded_instruction.rd;
@@ -449,14 +449,14 @@ thumb_execute()
                     store_result = true;
 
                     set_condition_C(result < *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result < *get_register(cpu, rd));
+                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 6: { // SBC
                     result = (*get_register(cpu, rd) - *get_register(cpu, rs) - !(CONDITION_C));
                     store_result = true;
 
                     set_condition_C(result > *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result > *get_register(cpu, rd));
+                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 7: { // ROR
                     if ((*get_register(cpu, rs) & 0xF) == 0) {
@@ -481,21 +481,21 @@ thumb_execute()
                     store_result = true;
 
                     set_condition_C(result > *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result > *get_register(cpu, rd));
+                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 10: { // CMP
                     result = *get_register(cpu, rd) - *get_register(cpu, rs);
                     store_result = false;
 
                     set_condition_C(result > *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result > *get_register(cpu, rd));
+                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 11: { // CMN
                     result = *get_register(cpu, rd) + *get_register(cpu, rs);
                     store_result = false;
 
                     set_condition_C(result < *get_register(cpu, rd)); // TODO: should the carry be set in the same way as overflow?
-                    set_condition_V(result < *get_register(cpu, rd));
+                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 12: { // ORR
                     result = *get_register(cpu, rd) | *get_register(cpu, rs);
@@ -535,31 +535,45 @@ thumb_execute()
                     (op == 0 || op == 1 || op == 2)));
             
 
-            u8 rs = decoded_instruction.rs + (H2 * 8);
-            u8 rd = decoded_instruction.rd + (H1 * 8);
+            u8 rs_n = decoded_instruction.rs + (H2 * 8);
+            u8 rd_n = decoded_instruction.rd + (H1 * 8);
+
+            u32 *rs = get_register(cpu, rs_n);
+            u32 *rd = get_register(cpu, rd_n);
+
+            u32 result = 0;
 
             switch (op) {
                 case 0: { // ADD
-                    *get_register(cpu, rd) += *get_register(cpu, rs);
+                    result = *rd + *rs;
+                    
+                    set_condition_C((result < *rs) ? 1 : 0);
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_condition_Z(result == 0);
+                    set_condition_N((result >> 31) & 1);
+                    
+                    *rd = result;
                 } break;
                 case 1: { // CMP
-                    u32 old_value = *get_register(cpu, rd);
-                    u32 result = *get_register(cpu, rd) - *get_register(cpu, rs);
+                    result = *rd - *rs;
                     
-                    u8 overflow = (result < old_value) ? 1 : 0;
-                    
-                    set_condition_V(overflow);
-                    // set_condition_C(carry); // TODO: do this
+                    set_condition_C((result < *rs) ? 1 : 0);
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     set_condition_Z(result == 0);
-                    set_condition_N(result >> 31); // TODO: check the shift
+                    set_condition_N((result >> 31) & 1);
                 } break;
                 case 2: { // MOV
-                    *get_register(cpu, rd) = *get_register(cpu, rs);
+                    *rd = *rs;
+                    
+                    set_condition_C(0);
+                    set_condition_V(0);
+                    set_condition_Z(result == 0);
+                    set_condition_N((result >> 31) & 1);
                 } break;
                 case 3: { // BX
-                    cpu->pc = *get_register(cpu, rs) & (-2);
+                    cpu->pc = *rs & (-2);
 
-                    u8 thumb_mode = *get_register(cpu, rs) & 1;
+                    u8 thumb_mode = *rs & 1;
                     set_control_bit_T(thumb_mode);
 
                     current_instruction = 0;
@@ -1040,6 +1054,7 @@ process_data_processing()
     u32 result = 0;
 
     u32 rn = *get_register(cpu, decoded_instruction.rn);
+    u32 *rd = get_register(cpu, decoded_instruction.rd);
     
     switch (decoded_instruction.type) {
         case INSTRUCTION_ADD: {
@@ -1052,7 +1067,7 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C((result < second_operand) ? 1 : 0);
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
         } break;
         case INSTRUCTION_AND: {
@@ -1089,7 +1104,7 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
         } break;
         case INSTRUCTION_RSB: {
@@ -1102,7 +1117,7 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
         } break;
         case INSTRUCTION_ADC: {
@@ -1115,7 +1130,7 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C((result < second_operand) ? 1 : 0);
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
         } break;
         case INSTRUCTION_SBC: {
@@ -1128,7 +1143,7 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
         } break;
         case INSTRUCTION_RSC: {
@@ -1141,7 +1156,7 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
         } break;
         case INSTRUCTION_TST: {
@@ -1178,7 +1193,7 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
         } break;
         case INSTRUCTION_CMN: {
@@ -1191,7 +1206,7 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C((result < second_operand) ? 1 : 0);
-                set_condition_V((*get_register(cpu, decoded_instruction.rd) & 0x80000000) != (result & 0x80000000));
+                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
         } break;
         case INSTRUCTION_ORR: {
@@ -1249,7 +1264,7 @@ process_data_processing()
     }
 
     if (store_result) {
-        *get_register(cpu, decoded_instruction.rd) = result;
+        *rd = result;
     }
 }
 
