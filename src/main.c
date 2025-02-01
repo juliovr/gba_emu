@@ -1074,7 +1074,8 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                set_condition_C((result <= second_operand) ? 1 : 0);
+                // set_condition_C((result <= second_operand) ? 1 : 0);
+                set_condition_C(carry);
             }
         } break;
         case INSTRUCTION_EOR: {
@@ -1086,7 +1087,8 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                set_condition_C((result <= second_operand) ? 1 : 0);
+                // set_condition_C((result <= second_operand) ? 1 : 0);
+                set_condition_C(carry);
             }
         } break;
         case INSTRUCTION_SUB: {
@@ -1163,7 +1165,8 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                set_condition_C((result <= second_operand) ? 1 : 0);
+                // set_condition_C((result <= second_operand) ? 1 : 0);
+                set_condition_C(carry);
             }
         } break;
         case INSTRUCTION_TEQ: {
@@ -1175,6 +1178,7 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
+                set_condition_C(carry);
             }
         } break;
         case INSTRUCTION_CMP: {
@@ -1212,7 +1216,8 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                set_condition_C((result <= second_operand) ? 1 : 0);
+                // set_condition_C((result <= second_operand) ? 1 : 0);
+                set_condition_C(carry);
             }
         } break;
         case INSTRUCTION_MOV: {
@@ -1224,11 +1229,12 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                set_condition_C(((result & 0x80000000) != (*rd & 0x80000000)) ? 1 : 0);
+                // set_condition_C(((result & 0x80000000) != (*rd & 0x80000000)) ? 1 : 0);
+                set_condition_C(carry);
             }
         } break;
         case INSTRUCTION_BIC: {
-            result = rn & !second_operand;
+            result = rn & ~second_operand;
             store_result = true;
 
             if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
@@ -1236,7 +1242,8 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                set_condition_C((result <= second_operand) ? 1 : 0);
+                // set_condition_C((result <= second_operand) ? 1 : 0);
+                set_condition_C(carry);
             }
         } break;
         case INSTRUCTION_MVN: {
@@ -1248,7 +1255,8 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                set_condition_C((result <= second_operand) ? 1 : 0);
+                // set_condition_C((result <= second_operand) ? 1 : 0);
+                set_condition_C(carry);
             }
         } break;
 
@@ -1583,7 +1591,7 @@ process_block_data_transfer()
                     bool register_index_set = register_list & 1;
                     if (register_index_set) {
                         if (decoded_instruction.P) {
-                            base_address++;
+                            base_address += 4;
 
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             *get_register(cpu, (u8)register_index) = *address;
@@ -1591,7 +1599,7 @@ process_block_data_transfer()
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             *get_register(cpu, (u8)register_index) = *address;
 
-                            base_address++;
+                            base_address += 4;
                         }
                     }
 
@@ -1602,7 +1610,7 @@ process_block_data_transfer()
                     bool register_index_set = (register_list >> 15) & 1;
                     if (register_index_set) {
                         if (decoded_instruction.P) {
-                            base_address--;
+                            base_address -= 4;
 
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             *get_register(cpu, (u8)register_index) = *address;
@@ -1610,7 +1618,7 @@ process_block_data_transfer()
                             u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
                             *get_register(cpu, (u8)register_index) = *address;
 
-                            base_address--;
+                            base_address -= 4;
                         }
                     }
 
@@ -2171,7 +2179,6 @@ process_instructions()
 {
     // Emulating pipelining.
     while (is_running) {
-        // TODO: in the future, check if this separation works (because of the order they are executed).
         execute();
         decode();
         fetch();
@@ -2185,7 +2192,7 @@ process_instructions()
 
 
 // ==================================================
-// Part of the new header framework
+// Part of the new testing framework
 
 // ARM lack of a no-op instruciton.
 Instruction no_op = {
