@@ -239,7 +239,6 @@ get_instruction_type_name(InstructionType type, char *buffer)
         case INSTRUCTION_LDC: strcpy(buffer, "INSTRUCTION_LDC"); break;
         case INSTRUCTION_MCR: strcpy(buffer, "INSTRUCTION_MCR"); break;
         case INSTRUCTION_MRC: strcpy(buffer, "INSTRUCTION_MRC"); break;
-        case INSTRUCTION_DEBUG_EXIT: strcpy(buffer, "INSTRUCTION_DEBUG_EXIT"); break;
     }
 }
 
@@ -250,10 +249,6 @@ Instruction decoded_instruction;
 static bool
 should_execute_instruction(Condition condition)
 {
-#ifdef _DEBUG
-    if (decoded_instruction.type == INSTRUCTION_DEBUG_EXIT) return true;
-#endif
-
     switch (condition) {
         case CONDITION_EQ: return (CONDITION_Z == 1);
         case CONDITION_NE: return (CONDITION_Z == 0);
@@ -1901,14 +1896,6 @@ execute()
         case INSTRUCTION_CATEGORY_COPROCESSOR_REGISTER_TRANSFERS: {
             process_coprocessor_register_transfers();
         } break;
-        
-#ifdef _DEBUG
-        case INSTRUCTION_CATEGORY_DEBUG: {
-            if (decoded_instruction.type == INSTRUCTION_DEBUG_EXIT) {
-                is_running = false;
-            }
-        } break;
-#endif // _DEBUG
     }
 
 exit_execute:
@@ -1930,12 +1917,6 @@ decode()
         decoded_instruction = (Instruction) {
             .type = INSTRUCTION_SWI,
         };
-        
-#ifdef _DEBUG
-        if ((current_instruction >> 28) & 0xF) {
-            decoded_instruction.type = INSTRUCTION_DEBUG_EXIT;
-        }
-#endif
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) == INSTRUCTION_FORMAT_COPROCESSOR_REGISTER_TRANSFER) {
         u8 L = (current_instruction >> 20) & 1;
@@ -2262,168 +2243,6 @@ process_instructions()
         fetch();
     }
 }
-
-
-
-
-
-
-
-// ==================================================
-// Part of the new testing framework
-
-// ARM lack of a no-op instruciton.
-Instruction no_op = {
-    .type = INSTRUCTION_NONE,
-};
-
-Instruction exit_instruction = {
-    .type = INSTRUCTION_DEBUG_EXIT,
-};
-
-typedef struct TestCartridge {
-    // Instruction instructions[256];
-    // int count;
-    u32 instructions[256];
-    int count;
-} TestCartridge;
-
-void add_instruction(TestCartridge *cartridge, Instruction instruction)
-{
-    // cartridge->instructions[cartridge->count++] = instruction;
-
-    u32 encoding = instruction.condition << 28;
-
-    switch (instruction.type) {
-        case INSTRUCTION_B: {
-            encoding |= 0b101 << 25;
-            encoding |= instruction.L << 24;
-            encoding |= instruction.offset & 0xFFF;
-        } break;
-        case INSTRUCTION_AND: {
-            encoding |= (instruction.I & 1) << 25;
-            encoding |= (instruction.S & 1) << 20;
-            encoding |= (instruction.rn & 0xF) << 16;
-            encoding |= (instruction.rd & 0xF) << 12;
-            encoding |= (instruction.second_operand & 0xFFF);
-        } break;
-        case INSTRUCTION_NONE: {
-            encoding = 0;
-        } break;
-        case INSTRUCTION_DEBUG_EXIT: {
-            encoding = (u32)-1;
-        } break;
-    }
-
-    cartridge->instructions[cartridge->count++] = encoding;
-}
-
-void load_test_cartridge_into_memory(TestCartridge *cartridge)
-{
-    for (int i = 0; i < cartridge->count; i++) {
-        *(((u32 *)memory.game_pak_rom) + i) = cartridge->instructions[i];
-    }
-}
-// ==================================================
-
-TestCartridge cartridge = {0};
-
-void init_B()
-{
-    Instruction instruction = {
-        .type = INSTRUCTION_B,
-        .condition = CONDITION_AL,
-        .L = 0,
-        .offset = 1,
-    };
-
-    add_instruction(&cartridge, instruction);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, exit_instruction);
-    load_test_cartridge_into_memory(&cartridge);
-}
-
-void eval_B()
-{
-    /* Order of increments (because of prefetching):
-     * 1. Before executing B, pc = 2.
-     * 2. After executing B, pc = 6.
-     * 3. Next fetch, pc = 7.
-     * 4. Decoding exit_instruction, next fetch, pc = 8.
-     * 5. Set is_running flag to false, one last fetching, pc = 9.
-     */
-    CPU expected = {
-        .pc = 9,
-    };
-
-    printf("PC = %d, expected = %d\n", cpu->pc, expected.pc);
-}
-
-void init_AND()
-{
-    u8 rotate = 0;
-    u8 imm = 2;
-    Instruction instruction = {
-        .type = INSTRUCTION_AND,
-        .condition = CONDITION_AL,
-        .I = 1,
-        .S = 1,
-        .rn = 0,
-        .rd = 1,
-        .second_operand = ((rotate << 8) | imm) & 0xFFF,
-    };
-
-    cpu->r0 = 7;
-    
-    add_instruction(&cartridge, instruction);
-    add_instruction(&cartridge, exit_instruction);
-    add_instruction(&cartridge, no_op);
-    add_instruction(&cartridge, no_op);
-    load_test_cartridge_into_memory(&cartridge);
-}
-
-void eval_AND()
-{
-    CPU expected = {
-        .r0 = 7,
-        .r1 = 2,
-        .cpsr = 0,
-    };
-
-    printf("r0 = %d, expected = %d\n", cpu->r0, expected.r0);
-    printf("r1 = %d, expected = %d\n", cpu->r1, expected.r1);
-    printf("cpsr = %d, expected = %d\n", cpu->cpsr, expected.cpsr);
-}
-
-void run_tests()
-{
-    // init_gba();
-    // init_B();
-    // process_instructions();
-    // eval_B();
-
-
-    // TODO: replicate the above test with this instructions and try to come up with a framework to add the remaining instruction.
-    init_gba();
-    init_AND();
-    process_instructions();
-    eval_AND();
-}
-
-/*
-Do something like this:
-TestDefinition test = {
-    .cartridge = 
-    .init = init_B,
-
-};
-
-DEFINE_TEST(test_B, test_B);
-*/
 
 
 int main(int argc, char *argv[])
