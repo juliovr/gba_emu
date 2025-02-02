@@ -655,7 +655,13 @@ thumb_execute()
             }
         } break;
         case INSTRUCTION_LOAD_ADDRESS: {
-            assert(!"Implement");
+            if (decoded_instruction.S) {
+                // SP
+                *get_register(cpu, decoded_instruction.rd) = cpu->sp + (decoded_instruction.value_8 << 2);
+            } else {
+                // PC
+                *get_register(cpu, decoded_instruction.rd) = (cpu->pc & 0xFFFFFFFC) + (decoded_instruction.value_8 << 2);
+            }
         } break;
         case INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER: {
             s8 sign = decoded_instruction.S ? -1 : 1;
