@@ -709,7 +709,35 @@ thumb_execute()
             cpu->sp = sp;
         } break;
         case INSTRUCTION_MULTIPLE_LOAD_STORE: {
-            assert(!"Implement");
+            u32 *rb = get_register(cpu, decoded_instruction.rb);
+            u32 base = *rb;
+            u16 register_list = decoded_instruction.register_list;
+            assert(register_list != 0);
+
+            int register_index = 0;
+            u8 registers_set = 0;
+            while (register_list) {
+                bool register_index_set = register_list & 1;
+                if (register_index_set) {
+                    u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
+
+                    if (decoded_instruction.L) {
+                        // LDMIA
+                        *get_register(cpu, (u8)register_index) = *address;
+                    } else {
+                        // STMIA
+                        *address = *get_register(cpu, (u8)register_index);
+                    }
+
+                    base += 4;
+                    registers_set++;
+                }
+
+                register_index++;
+                register_list >>= 1;
+            }
+
+            *rb = *rb + (registers_set * 4);
         } break;
         case INSTRUCTION_CONDITIONAL_BRANCH: {
             Condition condition = (Condition)decoded_instruction.condition;
