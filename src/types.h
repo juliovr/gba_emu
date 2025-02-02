@@ -293,8 +293,8 @@ typedef struct GBAMemory {
 
     // External Memory (Game Pak)
     u8 game_pak_rom[32*MEGABYTE];
-    // 0A000000-0BFFFFFF   Game Pak ROM/FlashROM (max 32MB) - Wait State 1
-    // 0C000000-0DFFFFFF   Game Pak ROM/FlashROM (max 32MB) - Wait State 2
+    u8 game_pak_rom_wait_state_1[32*MEGABYTE];
+    u8 game_pak_rom_wait_state_2[32*MEGABYTE];
     u8 game_pak_ram[64*MEGABYTE];
     // 0E010000-0FFFFFFF   Not used
 
@@ -327,8 +327,8 @@ get_memory_at(CPU *cpu, GBAMemory *gba_memory, u32 at)
 
     // External Memory (Game Pak)
     if (at <= 0x09FFFFFF) return (gba_memory->game_pak_rom + (at - 0x08000000));
-    if (at <= 0x0BFFFFFF) assert(!"game_pak Wait State 1 not handled");
-    if (at <= 0x0DFFFFFF) assert(!"game_pak Wait State 2 not handled");
+    if (at <= 0x0BFFFFFF) return (gba_memory->game_pak_rom_wait_state_1 + (at - 0x0A000000));
+    if (at <= 0x0DFFFFFF) return (gba_memory->game_pak_rom_wait_state_2 + (at - 0x0C000000));
     if (at <= 0x0E00FFFF) return (gba_memory->game_pak_ram + (at - 0x0E000000));
 
 
@@ -359,8 +359,8 @@ get_memory_at_without_exit(CPU *cpu, GBAMemory *gba_memory, u32 at)
 
     // External Memory (Game Pak)
     if (at <= 0x09FFFFFF) return (gba_memory->game_pak_rom + (at - 0x08000000));
-    if (at <= 0x0BFFFFFF) return 0;
-    if (at <= 0x0DFFFFFF) return 0;
+    if (at <= 0x0BFFFFFF) return (gba_memory->game_pak_rom_wait_state_1 + (at - 0x0A000000));
+    if (at <= 0x0DFFFFFF) return (gba_memory->game_pak_rom_wait_state_2 + (at - 0x0C000000));
     if (at <= 0x0E00FFFF) return (gba_memory->game_pak_ram + (at - 0x0E000000));
 
 

@@ -114,6 +114,8 @@ load_cartridge_into_memory(char *filename)
         fseek(file, 0, SEEK_SET);
 
         fread(memory.game_pak_rom, size, 1, file);
+        fread(memory.game_pak_rom_wait_state_1, size, 1, file);
+        fread(memory.game_pak_rom_wait_state_2, size, 1, file);
         
         fclose(file);
     }
@@ -289,6 +291,15 @@ left_shift_sign_extended(u32 value, u8 actual_bits_value, u8 shift)
     u32 value_sign_extended = (-sign << (actual_bits_value)) | value;
 
     return (value_sign_extended << shift);
+}
+
+static u32
+sign_extend(u32 value, u8 actual_bits_value)
+{
+    u8 sign = (value >> (actual_bits_value - 1)) & 1;
+    u32 value_sign_extended = (-sign << (actual_bits_value)) | value;
+
+    return value_sign_extended;
 }
 
 
@@ -608,7 +619,31 @@ thumb_execute()
             }
         } break;
         case INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD: {
-            assert(!"Implement");
+            u32 base = *get_register(cpu, decoded_instruction.rb) + *get_register(cpu, decoded_instruction.rm);
+            assert((base & 1) == 0);
+
+            u32 *rd = get_register(cpu, decoded_instruction.rd);
+
+            u8 S = decoded_instruction.S;
+            u8 H = decoded_instruction.H;
+
+            if (S == 0 && H == 0) {
+                // STRH
+                u16 *address = (u16 *)get_memory_at(cpu, &memory, base);
+                *address = (u16)*rd;
+            } else if (S == 0 && H == 1) {
+                // LDRH
+                u16 *address = (u16 *)get_memory_at(cpu, &memory, base);
+                *rd = *address;
+            } else if (S == 1 && H == 0) {
+                // LDRSB
+                u8 *address = get_memory_at(cpu, &memory, base);
+                *rd = sign_extend(*address, 8);
+            } else {
+                // LDRSH
+                u16 *address = (u16 *)get_memory_at(cpu, &memory, base);
+                *rd = sign_extend(*address, 16);
+            }
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET: {
             if (decoded_instruction.B) {
