@@ -113,6 +113,8 @@ load_cartridge_into_memory(char *filename)
         int size = ftell(file);
         fseek(file, 0, SEEK_SET);
 
+        assert(size <= 32*MEGABYTE);
+
         fread(memory.game_pak_rom, size, 1, file);
         fread(memory.game_pak_rom_wait_state_1, size, 1, file);
         fread(memory.game_pak_rom_wait_state_2, size, 1, file);
