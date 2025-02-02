@@ -336,6 +336,37 @@ get_memory_at(CPU *cpu, GBAMemory *gba_memory, u32 at)
     return 0;
 }
 
+u8 *
+get_memory_at_without_exit(CPU *cpu, GBAMemory *gba_memory, u32 at)
+{
+    // General Internal Memory
+    if (at <= 0x00003FFF) return (gba_memory->bios_system_rom + (at - 0x00000000));
+    if (at <= 0x01FFFFFF) return 0;
+    if (at <= 0x0203FFFF) return (gba_memory->ewram + (at - 0x02000000));
+    if (at <= 0x02FFFFFF) return 0;
+    if (at <= 0x03007FFF) return (gba_memory->iwram + (at - 0x03000000));
+    if (at <= 0x03FFFFFF) return 0;
+    if (at <= 0x040003FE) return (gba_memory->io_registers + (at - 0x04000000));
+    if (at <= 0x04FFFFFF) return 0;
+
+    // Internal Display Memory
+    if (at <= 0x050003FF) return (gba_memory->bg_obj_palette_ram + (at - 0x05000000));
+    if (at <= 0x05FFFFFF) return 0;
+    if (at <= 0x06017FFF) return (gba_memory->vram + (at - 0x06000000));
+    if (at <= 0x06FFFFFF) return 0;
+    if (at <= 0x070003FF) return (gba_memory->oam_obj_attributes + (at - 0x07000000));
+    if (at <= 0x07FFFFFF) return 0;
+
+    // External Memory (Game Pak)
+    if (at <= 0x09FFFFFF) return (gba_memory->game_pak_rom + (at - 0x08000000));
+    if (at <= 0x0BFFFFFF) return 0;
+    if (at <= 0x0DFFFFFF) return 0;
+    if (at <= 0x0E00FFFF) return (gba_memory->game_pak_ram + (at - 0x0E000000));
+
+
+    return 0;
+}
+
 
 #define INSTRUCTION_FORMAT_DATA_PROCESSING                              (0)
 #define INSTRUCTION_FORMAT_MULTIPLY                                     (0b0000000000000000000010010000)

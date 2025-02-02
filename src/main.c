@@ -506,11 +506,11 @@ thumb_execute()
                     store_result = true;
                 } break;
                 case 14: { // BIC
-                    result = *get_register(cpu, rd) & !*get_register(cpu, rs);
+                    result = *get_register(cpu, rd) & ~*get_register(cpu, rs);
                     store_result = true;
                 } break;
                 case 15: { // MVN
-                    result = !*get_register(cpu, rs);
+                    result = ~*get_register(cpu, rs);
                     store_result = true;
                 } break;
             }
@@ -611,20 +611,27 @@ thumb_execute()
             assert(!"Implement");
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET: {
-            u32 base = *get_register(cpu, decoded_instruction.rb) + (decoded_instruction.offset << 2);
             if (decoded_instruction.B) {
-                u8 *address = get_memory_at(cpu, &memory, base);
-                if (decoded_instruction.L) {
-                    *get_register(cpu, decoded_instruction.rd) = (u32)*address;
-                } else {
-                    *address = (u8)*get_register(cpu, decoded_instruction.rd);
+                u32 base = *get_register(cpu, decoded_instruction.rb) + (decoded_instruction.offset); // For Byte quantity does not multiply the offset.
+                // u8 *address = get_memory_at(cpu, &memory, base);
+                u8 *address = get_memory_at_without_exit(cpu, &memory, base);
+                if (address != 0) {
+                    if (decoded_instruction.L) {
+                        *get_register(cpu, decoded_instruction.rd) = (u32)((u8)*address);
+                    } else {
+                        *address = (u8)*get_register(cpu, decoded_instruction.rd);
+                    }
                 }
             } else {
-                u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
-                if (decoded_instruction.L) {
-                    *get_register(cpu, decoded_instruction.rd) = *address;
-                } else {
-                    *address = *get_register(cpu, decoded_instruction.rd);
+                u32 base = *get_register(cpu, decoded_instruction.rb) + (decoded_instruction.offset << 2);
+                // u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
+                u32 *address = (u32 *)get_memory_at_without_exit(cpu, &memory, base);
+                if (address != 0) {
+                    if (decoded_instruction.L) {
+                        *get_register(cpu, decoded_instruction.rd) = *address;
+                    } else {
+                        *address = *get_register(cpu, decoded_instruction.rd);
+                    }
                 }
             }
 
@@ -1247,7 +1254,7 @@ process_data_processing()
             }
         } break;
         case INSTRUCTION_MVN: {
-            result = !second_operand;
+            result = ~second_operand;
             store_result = true;
 
             if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
