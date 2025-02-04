@@ -27,3 +27,6 @@ I had many errors dealing with the differences between C and V flags. Here are t
 - [GBA Architecture](https://www.copetti.org/writings/consoles/game-boy-advance/)
 - [BIOS File](https://archive.org/details/gba_bios_202206)
 - [ARM Simulator to validate how instructions change the Status Register](https://cpulator.01xz.net/?sys=arm)
+
+TODO: next steps:
+1. Pick an instruction at random and compare the registers and cpsr with the mgba debug console.

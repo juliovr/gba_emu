@@ -21,6 +21,8 @@ bool is_running = true;
 CPU gba_cpu = {0};
 CPU *cpu = &gba_cpu;
 
+GBAMemory memory = {0};
+
 //
 // Control Bits
 //
@@ -97,10 +99,6 @@ set_condition_N(u8 bit)
     cpu->cpsr = ((cpu->cpsr & ~(1 << 31)) | ((bit) & 1) << 31);
 }
 
-
-GBAMemory memory = {0};
-
-
 static int
 load_cartridge_into_memory(char *filename)
 {
@@ -156,11 +154,18 @@ init_gba()
 
     cpu->r13 = 0x03007F00;
     cpu->cpsr = 0x1F;
+    cpu->pc = 0;
 
     load_bios_into_memory();
 
-    // cpu->pc = 0x08000000;
-    cpu->pc = 0;
+
+    //
+    // Set default values for IO registers
+    //
+
+    // SOUNDBIAS - Sound PWM Control
+    // This register controls the final sound output. The default setting is 0200h
+    *(u16 *)get_memory_at(cpu, &memory, 0x04000088) = 0x0200;
 }
 
 /*
@@ -310,7 +315,6 @@ thumb_execute()
 
     switch (decoded_instruction.type) {
         case INSTRUCTION_MOVE_SHIFTED_REGISTER: {
-            u8 rd = decoded_instruction.rd;
             int shift = decoded_instruction.offset;
             u32 value = *get_register(cpu, decoded_instruction.rs);
             u8 carry = 0;
@@ -339,8 +343,7 @@ thumb_execute()
                 } break;
             }
 
-            u32 *rd_register = get_register(cpu, rd);
-            *rd_register = result;
+            *get_register(cpu, decoded_instruction.rd) = result;
 
             set_condition_C(carry);
             set_condition_Z(result == 0);
@@ -409,122 +412,141 @@ thumb_execute()
             set_condition_N((result >> 31) & 1);
         } break;
         case INSTRUCTION_ALU_OPERATIONS: {
-            u8 rd = decoded_instruction.rd;
-            u8 rs = decoded_instruction.rs;
+            u32 *rd = get_register(cpu, decoded_instruction.rd);
+            u32 *rs = get_register(cpu, decoded_instruction.rs);
 
             u32 result = 0;
             bool store_result = false;
 
             switch (decoded_instruction.op) {
                 case 0: { // AND
-                    result = *get_register(cpu, rd) & *get_register(cpu, rs);
+                    result = *rd & *rs;
                     store_result = true;
                 } break;
                 case 1: { // EOR
-                    result = *get_register(cpu, rd) ^ *get_register(cpu, rs);
+                    result = *rd ^ *rs;
                     store_result = true;
                 } break;
                 case 2: { // LSL
-                    result = *get_register(cpu, rd) << *get_register(cpu, rs);
-                    store_result = true;
+                    // result = *rd << *rs;
+                    // store_result = true;
 
-                    if (*get_register(cpu, rs)) {
-                        set_condition_C((result >> 31) & 1);
+                    // if (*rs) {
+                    //     set_condition_C((result >> 31) & 1);
+                    // }
+
+                    // Mimic the spec of ARM Architecture Reference Manual. Seems too complicated.
+                    // TODO: If works, let's see if the above simpler code works as well.
+                    u8 rs_value = (u8)*rs;
+                    if (rs_value == 0) {
+                        store_result = false;
+                    } else if (rs_value < 32) {
+                        set_condition_C((*rd >> (32 - rs_value)) & 1);
+                        result = *rd << *rs;
+                        store_result = true;
+                    } else if (rs_value == 32) {
+                        set_condition_C(*rd & 1);
+                        result = 0;
+                        store_result = true;
+                    } else {
+                        set_condition_C(0);
+                        result = 0;
+                        store_result = true;
                     }
                 } break;
                 case 3: { // LSR
-                    if (*get_register(cpu, rs)) {
-                        set_condition_C((*get_register(cpu, rd) >> (*get_register(cpu, rs) - 1)) & 1);
+                    if (*rs) {
+                        set_condition_C((*rd >> (*rs - 1)) & 1);
                     }
 
-                    result = *get_register(cpu, rd) >> *get_register(cpu, rs);
+                    result = *rd >> *rs;
                     store_result = true;
                 } break;
                 case 4: { // ASR
-                    if (*get_register(cpu, rs)) {
-                        set_condition_C((*get_register(cpu, rd) >> (*get_register(cpu, rs) - 1)) & 1);
+                    if (*rs) {
+                        set_condition_C((*rd >> (*rs - 1)) & 1);
                     }
 
-                    u8 shift = *get_register(cpu, rs) & 0xFF;
-                    u8 msb = (*get_register(cpu, rd) >> 31) & 1;
+                    u8 shift = *rs & 0xFF;
+                    u8 msb = (*rd >> 31) & 1;
                     u32 msb_replicated = (-msb << (32 - shift));
 
-                    result = (*get_register(cpu, rd) >> shift) | msb_replicated;
+                    result = (*rd >> shift) | msb_replicated;
                     store_result = true;
                 } break;
                 case 5: { // ADC
-                    result = (*get_register(cpu, rd) + *get_register(cpu, rs) + CONDITION_C);
+                    result = (*rd + *rs + CONDITION_C);
                     store_result = true;
 
-                    set_condition_C((result < *get_register(cpu, rd)) ? 1 : 0);
-                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_condition_C((result < *rd) ? 1 : 0);
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 6: { // SBC
-                    result = (*get_register(cpu, rd) - *get_register(cpu, rs) - !(CONDITION_C));
+                    result = (*rd - *rs - !(CONDITION_C));
                     store_result = true;
 
-                    set_condition_C((result <= *get_register(cpu, rd)) ? 1 : 0);
-                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_condition_C((result <= *rd) ? 1 : 0);
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 7: { // ROR
-                    if ((*get_register(cpu, rs) & 0xF) == 0) {
-                        set_condition_C((*get_register(cpu, rd) >> 31) & 1);
+                    if ((*rs & 0xF) == 0) {
+                        set_condition_C((*rd >> 31) & 1);
                     } else {
-                        set_condition_C((*get_register(cpu, rd) >> (((*get_register(cpu, rs) & 0xF) - 1)) & 1));
+                        set_condition_C((*rd >> (((*rs & 0xF) - 1)) & 1));
                     }
 
-                    u8 shift = *get_register(cpu, rs) & 0xFF;
-                    u32 value_to_rotate = *get_register(cpu, rd) & ((1 << shift) - 1);
+                    u8 shift = *rs & 0xFF;
+                    u32 value_to_rotate = *rd & ((1 << shift) - 1);
                     u32 rotate_masked = value_to_rotate << (32 - shift);
 
-                    result = (*get_register(cpu, rd) >> shift) | rotate_masked;
+                    result = (*rd >> shift) | rotate_masked;
                     store_result = true;
                 } break;
                 case 8: { // TST
-                    result = *get_register(cpu, rd) & *get_register(cpu, rs);
+                    result = *rd & *rs;
                     store_result = false;
                 } break;
                 case 9: { // NEG
-                    result = (u32)(-(s32)*get_register(cpu, rs));
+                    result = (u32)(-(s32)*rs);
                     store_result = true;
 
-                    set_condition_C((result <= *get_register(cpu, rd)) ? 1 : 0);
-                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_condition_C((result <= *rd) ? 1 : 0);
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 10: { // CMP
-                    result = *get_register(cpu, rd) - *get_register(cpu, rs);
+                    result = *rd - *rs;
                     store_result = false;
 
-                    set_condition_C((result <= *get_register(cpu, rd)) ? 1 : 0);
-                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_condition_C((result <= *rd) ? 1 : 0);
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 11: { // CMN
-                    result = *get_register(cpu, rd) + *get_register(cpu, rs);
+                    result = *rd + *rs;
                     store_result = false;
 
-                    set_condition_C((result <= *get_register(cpu, rd)) ? 1 : 0);
-                    set_condition_V(((*get_register(cpu, rd) & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_condition_C((result <= *rd) ? 1 : 0);
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 12: { // ORR
-                    result = *get_register(cpu, rd) | *get_register(cpu, rs);
+                    result = *rd | *rs;
                     store_result = true;
                 } break;
                 case 13: { // MUL
-                    result = *get_register(cpu, rd) * *get_register(cpu, rs);
+                    result = *rd * *rs;
                     store_result = true;
                 } break;
                 case 14: { // BIC
-                    result = *get_register(cpu, rd) & ~*get_register(cpu, rs);
+                    result = *rd & ~*rs;
                     store_result = true;
                 } break;
                 case 15: { // MVN
-                    result = ~*get_register(cpu, rs);
+                    result = ~*rs;
                     store_result = true;
                 } break;
             }
 
             if (store_result) {
-                *get_register(cpu, rd) = result;
+                *rd = result;
             }
             
             set_condition_N((result >> 31) & 1);
