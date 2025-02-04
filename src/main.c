@@ -455,52 +455,109 @@ thumb_execute()
                     }
                 } break;
                 case 3: { // LSR
-                    if (*rs) {
-                        set_condition_C((*rd >> (*rs - 1)) & 1);
-                    }
+                    // if (*rs) {
+                    //     set_condition_C((*rd >> (*rs - 1)) & 1);
+                    // }
+                    //
+                    // result = *rd >> *rs;
+                    // store_result = true;
 
-                    result = *rd >> *rs;
-                    store_result = true;
+                    u8 rs_value = (u8)*rs;
+                    if (rs_value == 0) {
+                        store_result = false;
+                    } else if (rs_value < 32) {
+                        set_condition_C((*rd >> (rs_value - 1)) & 1);
+                        result = *rd >> rs_value;
+                        store_result = true;
+                    } else if (rs_value == 32) {
+                        set_condition_C((*rd >> 31) & 1);
+                        result = 0;
+                        store_result = true;
+                    } else {
+                        set_condition_C(0);
+                        result = 0;
+                        store_result = true;
+                    }
                 } break;
                 case 4: { // ASR
-                    if (*rs) {
-                        set_condition_C((*rd >> (*rs - 1)) & 1);
+                    // if (*rs) {
+                    //     set_condition_C((*rd >> (*rs - 1)) & 1);
+                    // }
+
+                    // u8 shift = *rs & 0xFF;
+                    // u8 msb = (*rd >> 31) & 1;
+                    // u32 msb_replicated = (-msb << (32 - shift));
+                    //
+                    // result = (*rd >> shift) | msb_replicated;
+                    // store_result = true;
+
+                    u8 rs_value = (u8)*rs;
+                    if (rs_value == 0) {
+                        store_result = false;
+                    } else if (rs_value < 32) {
+                        set_condition_C((*rd >> (rs_value - 1)) & 1);
+
+                        u8 msb = (*rd >> 31) & 1;
+                        u32 msb_replicated = (-msb << (32 - rs_value));
+
+                        result = (*rd >> rs_value) | msb_replicated;
+                        store_result = true;
+                    } else {
+                        u8 sign = (*rd >> 31) & 1;
+                        set_condition_C(sign);
+                        if (sign == 0) {
+                            result = 0;
+                        } else {
+                            result = 0xFFFFFFFF;
+                        }
+
+                        store_result = true;
                     }
-
-                    u8 shift = *rs & 0xFF;
-                    u8 msb = (*rd >> 31) & 1;
-                    u32 msb_replicated = (-msb << (32 - shift));
-
-                    result = (*rd >> shift) | msb_replicated;
-                    store_result = true;
                 } break;
                 case 5: { // ADC
                     result = (*rd + *rs + CONDITION_C);
                     store_result = true;
 
-                    set_condition_C((result < *rd) ? 1 : 0);
+                    set_condition_C((result < *rd) ? 1 : 0); // TODO: check
                     set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 6: { // SBC
-                    result = (*rd - *rs - !(CONDITION_C));
+                    result = (*rd - *rs - ~(CONDITION_C));
                     store_result = true;
 
                     set_condition_C((result <= *rd) ? 1 : 0);
                     set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 7: { // ROR
-                    if ((*rs & 0xF) == 0) {
+                    // if ((*rs & 0xF) == 0) {
+                    //     set_condition_C((*rd >> 31) & 1);
+                    // } else {
+                    //     set_condition_C((*rd >> (((*rs & 0xF) - 1)) & 1));
+                    // }
+                    //
+                    // u8 shift = *rs & 0xFF;
+                    // u32 value_to_rotate = *rd & ((1 << shift) - 1);
+                    // u32 rotate_masked = value_to_rotate << (32 - shift);
+                    //
+                    // result = (*rd >> shift) | rotate_masked;
+                    // store_result = true;
+
+                    u8 rs_value = (u8)*rs;
+                    if (rs_value == 0) {
+                        store_result = false;
+                    } else if ((rs_value & 0xF) == 0) {
                         set_condition_C((*rd >> 31) & 1);
+                        store_result = false;
                     } else {
-                        set_condition_C((*rd >> (((*rs & 0xF) - 1)) & 1));
+                        set_condition_C((*rd >> ((rs_value & 0xF) - 1)) & 1);
+
+                        u8 shift = rs_value & 0xF;
+                        u32 value_to_rotate = *rd & ((1 << shift) - 1);
+                        u32 rotate_masked = value_to_rotate << (32 - shift);
+
+                        result = (*rd >> shift) | rotate_masked;
+                        store_result = true;
                     }
-
-                    u8 shift = *rs & 0xFF;
-                    u32 value_to_rotate = *rd & ((1 << shift) - 1);
-                    u32 rotate_masked = value_to_rotate << (32 - shift);
-
-                    result = (*rd >> shift) | rotate_masked;
-                    store_result = true;
                 } break;
                 case 8: { // TST
                     result = *rd & *rs;
@@ -532,7 +589,7 @@ thumb_execute()
                     store_result = true;
                 } break;
                 case 13: { // MUL
-                    result = *rd * *rs;
+                    result = (u32)(*rd * *rs);
                     store_result = true;
                 } break;
                 case 14: { // BIC
