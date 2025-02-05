@@ -564,7 +564,7 @@ thumb_execute()
                     store_result = false;
                 } break;
                 case 9: { // NEG
-                    result = (u32)(-(s32)*rs);
+                    result = 0 - *rs;
                     store_result = true;
 
                     set_condition_C((result <= *rd) ? 1 : 0);
@@ -783,49 +783,58 @@ thumb_execute()
         case INSTRUCTION_PUSH_POP_REGISTERS: {
             u8 register_list = (u8)decoded_instruction.register_list;
             u32 sp = cpu->sp;
-
-            if (decoded_instruction.R) {
-                if (decoded_instruction.L) {
-                    // Load
-                    u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
-                    cpu->pc = *address;
-
-                    sp += 4;
-                } else {
-                    // Store
-                    sp -= 4;
-
-                    u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
-                    *address = cpu->lr;
-                }
-            }
-
-            int register_index = 7;
-            while (register_list) {
-                bool register_index_set = (register_list >> 7) & 1;
-                if (register_index_set) {
-                    if (decoded_instruction.L) {
-                        // Load
+            
+            if (decoded_instruction.L) { // POP
+                int register_index = 0;
+                while (register_list) {
+                    bool register_index_set = register_list & 1;
+                    if (register_index_set) {
                         u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
                         *get_register(cpu, (u8)register_index) = *address;
 
                         sp += 4;
-                    } else {
-                        // Store
-                        sp -= 4;
+                    }
+                    
+                    register_index++;
+                    register_list >>= 1;
+                }
 
+                if (decoded_instruction.R) {
+                    u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
+                    cpu->pc = *address & 0xFFFFFFFE;
+
+                    sp += 4;
+                }
+                
+                cpu->sp = sp;
+            } else { // PUSH
+                // Instead of going from the bottom I'm going to insert the values in reverse order.
+                int register_index = 7;
+                if (decoded_instruction.R) {
+                    sp -= 4;
+
+                    u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
+                    *address = *get_register(cpu, (u8)14); // LR register
+                }
+
+                while (register_list) {
+                    bool register_index_set = (register_list >> 7) & 1;
+                    if (register_index_set) {
+                        sp -= 4;
+                        
                         u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
                         *address = *get_register(cpu, (u8)register_index);
                     }
+
+                    register_index--;
+                    register_list <<= 1;
                 }
 
-                register_index--;
-                register_list <<= 1;
+                cpu->sp = sp;
             }
-
-            cpu->sp = sp;
         } break;
         case INSTRUCTION_MULTIPLE_LOAD_STORE: {
+            // TODO: check this instruction. Maybe I got to modify like the above.
             u32 *rb = get_register(cpu, decoded_instruction.rb);
             u32 base = *rb;
             u16 register_list = decoded_instruction.register_list;
