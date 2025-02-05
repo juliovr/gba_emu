@@ -1133,6 +1133,8 @@ process_branch()
 static u32
 rotate_right(u32 value, u32 shift)
 {
+    if (shift == 0) return value;
+
     u32 value_to_rotate = value & ((1 << shift) - 1);
     u32 rotate_masked = value_to_rotate << (32 - shift);
 
@@ -1857,7 +1859,23 @@ process_single_data_swap()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_SWP: {
-            assert(!"Implement");
+            u32 *rn = get_register(cpu, decoded_instruction.rn);
+            u32 *rm = get_register(cpu, decoded_instruction.rm);
+            u32 *rd = get_register(cpu, decoded_instruction.rd);
+            
+            if (decoded_instruction.B) {
+                u8 *address = get_memory_at(cpu, &memory, *rn);
+                u8 temp = *address;
+                *address = (u8)*rm;
+                *rd = temp;
+            } else {
+                u32 *address = (u32 *)get_memory_at(cpu, &memory, *rn);
+                int shift_right = 8 * (*rn & 0b11);
+                u32 temp = rotate_right(*address, shift_right);
+
+                *address = *rm;
+                *rd = temp;
+            }
         } break;
 
         default: {
