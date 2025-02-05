@@ -782,6 +782,8 @@ thumb_execute()
         } break;
         case INSTRUCTION_PUSH_POP_REGISTERS: {
             u8 register_list = (u8)decoded_instruction.register_list;
+            assert(register_list != 0);
+
             u32 sp = cpu->sp;
             
             if (decoded_instruction.L) { // POP
@@ -834,14 +836,12 @@ thumb_execute()
             }
         } break;
         case INSTRUCTION_MULTIPLE_LOAD_STORE: {
-            // TODO: check this instruction. Maybe I got to modify like the above.
             u32 *rb = get_register(cpu, decoded_instruction.rb);
             u32 base = *rb;
             u16 register_list = decoded_instruction.register_list;
             assert(register_list != 0);
 
             int register_index = 0;
-            u8 registers_set = 0;
             while (register_list) {
                 bool register_index_set = register_list & 1;
                 if (register_index_set) {
@@ -856,14 +856,13 @@ thumb_execute()
                     }
 
                     base += 4;
-                    registers_set++;
                 }
 
                 register_index++;
                 register_list >>= 1;
             }
 
-            *rb = *rb + (registers_set * 4);
+            *rb = base;
         } break;
         case INSTRUCTION_CONDITIONAL_BRANCH: {
             Condition condition = (Condition)decoded_instruction.condition;
