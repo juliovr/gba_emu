@@ -1581,23 +1581,14 @@ static void
 process_halfword_and_signed_data_transfer()
 {
     switch (decoded_instruction.type) {
-        // Halfword and signed data transfer
-        case INSTRUCTION_LDRH_IMM: {
-            assert(!"Implement");
-        } break;
-        case INSTRUCTION_STRH_IMM: {
-            assert(!"Implement");
-        } break;
-        case INSTRUCTION_LDRSB_IMM: {
-            assert(!"Implement");
-        } break;
-        case INSTRUCTION_LDRSH_IMM: {
-            assert(!"Implement");
-        } break;
-
         case INSTRUCTION_LDRH: {
-            int base = *get_register(cpu, decoded_instruction.rn);
-            int offset = *get_register(cpu, decoded_instruction.rm);
+            u32 base = *get_register(cpu, decoded_instruction.rn);
+            u32 offset;
+            if (decoded_instruction.I) {
+                offset = decoded_instruction.offset;
+            } else {
+                offset = *get_register(cpu, decoded_instruction.rm);
+            }
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
@@ -1618,8 +1609,13 @@ process_halfword_and_signed_data_transfer()
 
         } break;
         case INSTRUCTION_STRH: {
-            int base = *get_register(cpu, decoded_instruction.rn);
-            int offset = *get_register(cpu, decoded_instruction.rm);
+            u32 base = *get_register(cpu, decoded_instruction.rn);
+            u32 offset;
+            if (decoded_instruction.I) {
+                offset = decoded_instruction.offset;
+            } else {
+                offset = *get_register(cpu, decoded_instruction.rm);
+            }
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
@@ -1640,8 +1636,14 @@ process_halfword_and_signed_data_transfer()
 
         } break;
         case INSTRUCTION_LDRSB: {
-            int base = *get_register(cpu, decoded_instruction.rn);
-            int offset = *get_register(cpu, decoded_instruction.rm);
+            u32 base = *get_register(cpu, decoded_instruction.rn);
+            u32 offset;
+            if (decoded_instruction.I) {
+                offset = decoded_instruction.offset;
+            } else {
+                offset = *get_register(cpu, decoded_instruction.rm);
+            }
+
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
@@ -1670,8 +1672,14 @@ process_halfword_and_signed_data_transfer()
 
         } break;
         case INSTRUCTION_LDRSH: {
-            int base = *get_register(cpu, decoded_instruction.rn);
-            int offset = *get_register(cpu, decoded_instruction.rm);
+            u32 base = *get_register(cpu, decoded_instruction.rn);
+            u32 offset;
+            if (decoded_instruction.I) {
+                offset = decoded_instruction.offset;
+            } else {
+                offset = *get_register(cpu, decoded_instruction.rm);
+            }
+
 
             if (decoded_instruction.P) {
                 UPDATE_BASE_OFFSET();
@@ -1871,8 +1879,8 @@ process_single_data_swap()
                 *rd = temp;
             } else {
                 u32 *address = (u32 *)get_memory_at(cpu, &memory, *rn);
-                int shift_right = 8 * (*rn & 0b11);
-                u32 temp = rotate_right(*address, shift_right);
+                int rotate_value = 8 * (*rn & 0b11);
+                u32 temp = rotate_right(*address, rotate_value);
 
                 *address = *rm;
                 *rd = temp;
@@ -2126,14 +2134,14 @@ decode()
         if (S == 0 && H == 1) {
             if (L) {
                 // load
-                type = INSTRUCTION_LDRH_IMM;
+                type = INSTRUCTION_LDRH;
             } else {
-                type = INSTRUCTION_STRH_IMM;
+                type = INSTRUCTION_STRH;
             }
         } else if (S == 1 && H == 0) {
-            type = INSTRUCTION_LDRSB_IMM;
+            type = INSTRUCTION_LDRSB;
         } else {
-            type = INSTRUCTION_LDRSH_IMM;
+            type = INSTRUCTION_LDRSH;
         }
 
         decoded_instruction = (Instruction) {
@@ -2144,6 +2152,7 @@ decode()
             .rd = (current_instruction >> 12) & 0xF,
             .rn = (current_instruction >> 16) & 0xF,
             .L = L,
+            .I = (current_instruction >> 22) & 1,
             .W = (current_instruction >> 21) & 1,
             .U = (current_instruction >> 23) & 1,
             .P = (current_instruction >> 24) & 1,
