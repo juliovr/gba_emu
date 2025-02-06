@@ -1712,62 +1712,9 @@ process_halfword_and_signed_data_transfer()
 static void
 process_block_data_transfer()
 {
+    u8 P = decoded_instruction.P;
     switch (decoded_instruction.type) {
         case INSTRUCTION_LDM: {
-            s32 base_address = *get_register(cpu, decoded_instruction.rn);
-            u16 register_list = decoded_instruction.register_list;
-            assert(register_list != 0);
-
-            int register_index = (decoded_instruction.U) ? 0 : 15;
-            while (register_list) {
-                if (decoded_instruction.U) {
-                    // Increment
-                    bool register_index_set = register_list & 1;
-                    if (register_index_set) {
-                        if (decoded_instruction.P) {
-                            base_address += 4;
-
-                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            *get_register(cpu, (u8)register_index) = *address;
-                        } else {
-                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            *get_register(cpu, (u8)register_index) = *address;
-
-                            base_address += 4;
-                        }
-                    }
-
-                    register_index++;
-                    register_list >>= 1;
-                } else {
-                    // Decrement
-                    bool register_index_set = (register_list >> 15) & 1;
-                    if (register_index_set) {
-                        if (decoded_instruction.P) {
-                            base_address -= 4;
-
-                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            *get_register(cpu, (u8)register_index) = *address;
-                        } else {
-                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            *get_register(cpu, (u8)register_index) = *address;
-
-                            base_address -= 4;
-                        }
-                    }
-
-                    register_index--;
-                    register_list <<= 1;
-                }
-
-            }
-
-            if (decoded_instruction.W) {
-                *get_register(cpu, decoded_instruction.rn) = base_address;
-            }
-        } break;
-
-        case INSTRUCTION_STM: {
             u32 base_address = *get_register(cpu, decoded_instruction.rn);
             u16 register_list = decoded_instruction.register_list;
             assert(register_list != 0);
@@ -1778,16 +1725,28 @@ process_block_data_transfer()
                     // Increment
                     bool register_index_set = register_list & 1;
                     if (register_index_set) {
-                        if (decoded_instruction.P) {
+                        u32 *address;
+                        if (P) {
                             base_address += 4;
-
-                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            *address = *get_register(cpu, (u8)register_index);
+                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            
+                            if (decoded_instruction.W) {
+                                *get_register(cpu, decoded_instruction.rn) = base_address;
+                            }
                         } else {
-                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            *address = *get_register(cpu, (u8)register_index);
+                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            base_address += 4;
+                            *get_register(cpu, decoded_instruction.rn) = base_address;
+                        }
+
+                        if (register_index == 15) {
+                            u32 value = *(u32 *)get_memory_at(cpu, &memory, base_address);
+                            cpu->pc = value & 0xFFFFFFFC;
+                            current_instruction = 0;
 
                             base_address += 4;
+                        } else {
+                            *get_register(cpu, (u8)register_index) = *address;
                         }
                     }
 
@@ -1795,18 +1754,31 @@ process_block_data_transfer()
                     register_list >>= 1;
                 } else {
                     // Decrement
+                    assert(!"Implemented checking the manual, but when reach this point, let's re-check the implementation (just in case)");
                     bool register_index_set = (register_list >> 15) & 1;
                     if (register_index_set) {
-                        if (decoded_instruction.P) {
+                        u32 *address;
+                        if (P) {
                             base_address -= 4;
-
-                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            *address = *get_register(cpu, (u8)register_index);
+                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            
+                            if (decoded_instruction.W) {
+                                *get_register(cpu, decoded_instruction.rn) = base_address;
+                            }
                         } else {
-                            u32 *address = (u32 *)get_memory_at(cpu, &memory, base_address);
-                            *address = *get_register(cpu, (u8)register_index);
+                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            base_address -= 4;
+                            *get_register(cpu, decoded_instruction.rn) = base_address;
+                        }
+
+                        if (register_index == 15) {
+                            u32 value = *(u32 *)get_memory_at(cpu, &memory, base_address);
+                            cpu->pc = value & 0xFFFFFFFC;
+                            current_instruction = 0;
 
                             base_address -= 4;
+                        } else {
+                            *get_register(cpu, (u8)register_index) = *address;
                         }
                     }
 
@@ -1816,9 +1788,66 @@ process_block_data_transfer()
 
             }
 
-            if (decoded_instruction.W) {
-                *get_register(cpu, decoded_instruction.rn) = base_address;
+        } break;
+
+        case INSTRUCTION_STM: {
+            u32 base_address = *get_register(cpu, decoded_instruction.rn);
+            u16 register_list = decoded_instruction.register_list;
+            assert(register_list != 0);
+
+            u8 P = decoded_instruction.P;
+
+            int register_index = (decoded_instruction.U) ? 0 : 15;
+            while (register_list) {
+                if (decoded_instruction.U) {
+                    // Increment
+                    bool register_index_set = register_list & 1;
+                    if (register_index_set) {
+                        u32 *address;
+                        if (P) {
+                            base_address += 4;
+                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            
+                            if (decoded_instruction.W) {
+                                *get_register(cpu, decoded_instruction.rn) = base_address;
+                            }
+                        } else {
+                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            base_address += 4;
+                            *get_register(cpu, decoded_instruction.rn) = base_address;
+                        }
+
+                        *address = *get_register(cpu, (u8)register_index);
+                    }
+
+                    register_index++;
+                    register_list >>= 1;
+                } else {
+                    // Decrement
+                    bool register_index_set = (register_list >> 15) & 1;
+                    if (register_index_set) {
+                        u32 *address;
+                        if (P) {
+                            base_address -= 4;
+                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            
+                            if (decoded_instruction.W) {
+                                *get_register(cpu, decoded_instruction.rn) = base_address;
+                            }
+                        } else {
+                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            base_address -= 4;
+                            *get_register(cpu, decoded_instruction.rn) = base_address;
+                        }
+
+                        *address = *get_register(cpu, (u8)register_index);
+                    }
+
+                    register_index--;
+                    register_list <<= 1;
+                }
             }
+            
         } break;
 
         default: {
@@ -2050,14 +2079,15 @@ decode()
             .register_list = current_instruction & 0xFFFF,
         };
 
+        if (decoded_instruction.S) {
+            decoded_instruction.W = 0; // NOTE: Setting bit 21 (the W bit) has UNPREDICTABLE results, so let's force to 0.
+        }
+
         // NOTE: R15 should not be used as the base register in any LDM or STM instruction.
         assert(decoded_instruction.rn != 15);
 
         // NOTE: Any subset of the registers, or all the registers, may be specified. The only restriction is that the register list should not be empty.
         assert(decoded_instruction.register_list > 0);
-
-        // NOTE: S set means it is executed in privilege mode.
-        assert(decoded_instruction.S == 0);
     }
     else if ((current_instruction & INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) == INSTRUCTION_FORMAT_SINGLE_DATA_TRANSFER) {
         int opcode = (current_instruction >> 20) & 1;
