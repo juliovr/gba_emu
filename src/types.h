@@ -744,8 +744,8 @@ typedef struct Instruction {
     u8 H2;
     u8 op;
 
-#ifdef _DEBUG
     u32 address;
+#ifdef _DEBUG
     u32 encoding;
 #endif
 } Instruction;

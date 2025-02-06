@@ -804,6 +804,7 @@ thumb_execute()
                 if (decoded_instruction.R) {
                     u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
                     cpu->pc = *address & 0xFFFFFFFE;
+                    current_instruction = 0;
 
                     sp += 4;
                 }
@@ -1088,7 +1089,10 @@ thumb_swi:
     }
 
     decoded_instruction.address = cpu->pc - 2;
+
+#ifdef _DEBUG
     decoded_instruction.encoding = current_instruction;
+#endif
 }
 
 void
@@ -2321,7 +2325,10 @@ data_processing:
 
     decoded_instruction.condition = (current_instruction >> 28) & 0xF;
     decoded_instruction.address = cpu->pc - 4;
+
+#ifdef _DEBUG
     decoded_instruction.encoding = current_instruction;
+#endif
 
     current_instruction = 0;
 }
