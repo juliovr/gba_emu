@@ -1110,6 +1110,7 @@ process_branch()
         case INSTRUCTION_B: {
             if (decoded_instruction.L) {
                 cpu->lr = cpu->pc - 4;
+                assert(cpu->pc - 4 == decoded_instruction.address + 4);
             }
 
             u32 offset = left_shift_sign_extended(decoded_instruction.offset, 24, 2);
@@ -1131,50 +1132,6 @@ process_branch()
             assert(!"Invalid instruction type for category");
         }
     }
-}
-
-
-static u32
-rotate_right(u32 value, u32 shift)
-{
-    if (shift == 0) return value;
-
-    u32 value_to_rotate = value & ((1 << shift) - 1);
-    u32 rotate_masked = value_to_rotate << (32 - shift);
-
-    return (value >> shift) | rotate_masked;
-}
-
-static u32
-apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
-{
-    switch (shift_type) {
-        case SHIFT_TYPE_LOGICAL_LEFT: {
-            *carry = (value >> (32 - shift)) & 1;
-
-            return value << shift;
-        } break;
-        case SHIFT_TYPE_LOGICAL_RIGHT: {
-            *carry = (value >> (shift - 1) & 1);
-            
-            return value >> shift;
-        } break;
-        case SHIFT_TYPE_ARITHMETIC_RIGHT: {
-            *carry = (value >> (shift - 1) & 1);
-            
-            u8 msb = (value >> 31) & 1;
-            u32 msb_replicated = (-msb << (32 - shift));
-
-            return (value >> shift) | msb_replicated;
-        } break;
-        case SHIFT_TYPE_ROTATE_RIGHT: {
-            *carry = (value >> (shift - 1) & 1);
-
-            return rotate_right(value, shift);
-        } break;
-    }
-
-    return value;
 }
 
 static void
@@ -1240,7 +1197,6 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                // set_condition_C((result <= second_operand) ? 1 : 0);
                 set_condition_C(carry);
             }
         } break;
@@ -1253,7 +1209,6 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                // set_condition_C((result <= second_operand) ? 1 : 0);
                 set_condition_C(carry);
             }
         } break;
@@ -1331,7 +1286,6 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                // set_condition_C((result <= second_operand) ? 1 : 0);
                 set_condition_C(carry);
             }
         } break;
@@ -1369,7 +1323,8 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                set_condition_C((result <= second_operand) ? 1 : 0);
+                // set_condition_C((result <= second_operand) ? 1 : 0);
+                set_condition_C((result < second_operand) ? 1 : 0);
                 set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
         } break;
@@ -1382,7 +1337,6 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                // set_condition_C((result <= second_operand) ? 1 : 0);
                 set_condition_C(carry);
             }
         } break;
@@ -1395,7 +1349,6 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                // set_condition_C(((result & 0x80000000) != (*rd & 0x80000000)) ? 1 : 0);
                 set_condition_C(carry);
             }
         } break;
@@ -1408,7 +1361,6 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                // set_condition_C((result <= second_operand) ? 1 : 0);
                 set_condition_C(carry);
             }
         } break;
@@ -1421,7 +1373,6 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                // set_condition_C((result <= second_operand) ? 1 : 0);
                 set_condition_C(carry);
             }
         } break;
@@ -1441,14 +1392,14 @@ process_psr_transfer()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_MRS: {
-            u32 sr = cpu->cpsr;
             if (decoded_instruction.P) {
-                sr = *(get_spsr_current_mode(cpu));
+                *get_register(cpu, decoded_instruction.rd) = *(get_spsr_current_mode(cpu));
+            } else {
+                *get_register(cpu, decoded_instruction.rd) = cpu->cpsr;
             }
-
-            *get_register(cpu, decoded_instruction.rd) = sr;
         } break;
         case INSTRUCTION_MSR: {
+            // TODO: check this with the manual
             u32 *sr = &cpu->cpsr;
             if (decoded_instruction.P) {
                 sr = get_spsr_current_mode(cpu);
@@ -1531,74 +1482,91 @@ process_single_data_transfer()
     } else {
         offset = (u16)decoded_instruction.offset;
     }
+
+    u8 P = decoded_instruction.P;
+    u8 B = decoded_instruction.B;
+    u32 *rd = get_register(cpu, decoded_instruction.rd);
     
     switch (decoded_instruction.type) {
         case INSTRUCTION_LDR: {
-            if (decoded_instruction.P) {
-                UPDATE_BASE_OFFSET();
-                u8 *address = get_memory_at(cpu, &memory, base);
-                u8 rotate_value = 8 * (base & 0b11);
-                
-                // Store data
-                if (decoded_instruction.B) {
-                    *get_register(cpu, decoded_instruction.rd) = rotate_right((u32)(*address), rotate_value);
-                } else {
-                    *get_register(cpu, decoded_instruction.rd) = rotate_right(*((u32 *)address), rotate_value);
-                }
+            if (B) {
+                u8 *address;
+                if (P) {
+                    UPDATE_BASE_OFFSET();
+                    address = get_memory_at(cpu, &memory, base);
 
-                if (decoded_instruction.W) {
+                    if (decoded_instruction.W) {
+                        *get_register(cpu, decoded_instruction.rn) = base;
+                    }
+                } else {
+                    address = get_memory_at(cpu, &memory, base);
+                    UPDATE_BASE_OFFSET();
                     *get_register(cpu, decoded_instruction.rn) = base;
                 }
+                
+                *rd = *address;
             } else {
-                u8 *address = get_memory_at(cpu, &memory, base);
-                u8 rotate_value = 8 * (base & 0b11);
+                u32 value = 0;
+                u32 *address;
+                if (P) {
+                    UPDATE_BASE_OFFSET();
+                    address = (u32 *)get_memory_at(cpu, &memory, base);
 
-                // Store data
-                if (decoded_instruction.B) {
-                    *get_register(cpu, decoded_instruction.rd) = rotate_right((u32)(*address), rotate_value);
+                    if (decoded_instruction.W) {
+                        *get_register(cpu, decoded_instruction.rn) = base;
+                    }
                 } else {
-                    *get_register(cpu, decoded_instruction.rd) = rotate_right(*((u32 *)address), rotate_value);
+                    address = (u32 *)get_memory_at(cpu, &memory, base);
+                    UPDATE_BASE_OFFSET();
+                    *get_register(cpu, decoded_instruction.rn) = base;
                 }
 
-                UPDATE_BASE_OFFSET();
-                *get_register(cpu, decoded_instruction.rn) = base;
-            }
+                u8 rotate_value = 8 * (base & 0b11);
+                value = rotate_right(*address, rotate_value);
 
-            if (decoded_instruction.rd == 15) {
-                *get_register(cpu, decoded_instruction.rd) &= 0xFFFFFFFC; // NOTE: From "ARM Architecture Reference Manual"
+                if (*rd == 15) {
+                    cpu->pc = value & 0xFFFFFFFC; // NOTE: From "ARM Architecture Reference Manual"
 
-                // PC written, so it has to branch to that instruction and invalidate whatever the pre-fetched was.
-                current_instruction = 0;
+                    // PC written, so it has to branch to that instruction and invalidate whatever the pre-fetched was.
+                    current_instruction = 0;
+                } else {
+                    *rd = value;
+                }
             }
-            
         } break;
         case INSTRUCTION_STR: {
-            if (decoded_instruction.P) {
-                UPDATE_BASE_OFFSET();
-                u8 *address = get_memory_at(cpu, &memory, base);
+            if (B) {
+                u8 *address;
+                if (P) {
+                    UPDATE_BASE_OFFSET();
+                    address = get_memory_at(cpu, &memory, base);
 
-                // Store data
-                if (decoded_instruction.B) {
-                    *((u32 *)address) = (u8)*get_register(cpu, decoded_instruction.rd);
+                    if (decoded_instruction.W) {
+                        *get_register(cpu, decoded_instruction.rn) = base;
+                    }
                 } else {
-                    *((u32 *)address) = *get_register(cpu, decoded_instruction.rd);
-                }
-
-                if (decoded_instruction.W) {
+                    address = get_memory_at(cpu, &memory, base);
+                    UPDATE_BASE_OFFSET();
                     *get_register(cpu, decoded_instruction.rn) = base;
                 }
-            } else {
-                u8 *address = get_memory_at(cpu, &memory, base);
 
-                // Store data
-                if (decoded_instruction.B) {
-                    *((u32 *)address) = (u8)*get_register(cpu, decoded_instruction.rd);
+                *address = (*rd & 0xFF);
+            } else {
+                u32 *address;
+                if (P) {
+                    UPDATE_BASE_OFFSET();
+                    address = (u32 *)get_memory_at(cpu, &memory, base);
+
+                    if (decoded_instruction.W) {
+                        *get_register(cpu, decoded_instruction.rn) = base;
+                    }
                 } else {
-                    *((u32 *)address) = *get_register(cpu, decoded_instruction.rd);
+                    address = (u32 *)get_memory_at(cpu, &memory, base);
+                    UPDATE_BASE_OFFSET();
+                    *get_register(cpu, decoded_instruction.rn) = base;
                 }
 
-                UPDATE_BASE_OFFSET();
-                *get_register(cpu, decoded_instruction.rn) = base;
+                *address = *rd;
             }
 
         } break;
@@ -2276,7 +2244,6 @@ data_processing:
             .I = (current_instruction >> 25) & 1, // Immediate operand
             .rn = (current_instruction >> 16) & 0xF, // Source register
             .rd = (current_instruction >> 12) & 0xF, // Destination register
-            // TODO: check the docs when writing into R15 (PC) register.
             .second_operand = current_instruction & ((1 << 12) - 1),
         };
 

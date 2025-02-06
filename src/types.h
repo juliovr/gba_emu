@@ -23,6 +23,8 @@ typedef int bool;
     do {                                                                                                    \
         if (!(expression)) {                                                                                \
             print_cpu_state(cpu);                                                                           \
+            fflush(stdout);                                                                                 \
+            fflush(stderr);                                                                                 \
             fprintf(stderr, "Assertion failed: %s, file %s, line %d\n", #expression, __FILE__, __LINE__);   \
             *((int *)0) = 0;                                                                                \
         }                                                                                                   \
@@ -166,10 +168,10 @@ print_cpu_state(CPU *cpu)
     printf("----------------\n");
     printf("Registers:\n");
     for (int i = 0; i < 16; i++) {
-        printf("    r[%d] = 0x%x\n", i, cpu->r[i]);
+        printf("    r[%d] = 0x%X\n", i, cpu->r[i]);
     }
     printf("----------------\n");
-    printf("PC = 0x%x\n", cpu->pc);
+    printf("PC = 0x%X\n", cpu->pc);
 
     char cpsr_buffer[33];
     num_to_binary_32(cpsr_buffer, cpu->cpsr);
@@ -758,5 +760,50 @@ void execute();
 void thumb_fetch();
 void thumb_decode();
 void thumb_execute();
+
+
+
+static u32
+rotate_right(u32 value, u32 shift)
+{
+    if (shift == 0) return value;
+
+    u32 value_to_rotate = value & ((1 << shift) - 1);
+    u32 rotate_masked = value_to_rotate << (32 - shift);
+
+    return (value >> shift) | rotate_masked;
+}
+
+static u32
+apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
+{
+    switch (shift_type) {
+        case SHIFT_TYPE_LOGICAL_LEFT: {
+            *carry = (value >> (32 - shift)) & 1;
+
+            return value << shift;
+        } break;
+        case SHIFT_TYPE_LOGICAL_RIGHT: {
+            *carry = (value >> (shift - 1) & 1);
+            
+            return value >> shift;
+        } break;
+        case SHIFT_TYPE_ARITHMETIC_RIGHT: {
+            *carry = (value >> (shift - 1) & 1);
+            
+            u8 msb = (value >> 31) & 1;
+            u32 msb_replicated = (-msb << (32 - shift));
+
+            return (value >> shift) | msb_replicated;
+        } break;
+        case SHIFT_TYPE_ROTATE_RIGHT: {
+            *carry = (value >> (shift - 1) & 1);
+
+            return rotate_right(value, shift);
+        } break;
+    }
+
+    return value;
+}
 
 #endif
