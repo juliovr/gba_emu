@@ -1399,25 +1399,79 @@ process_psr_transfer()
             }
         } break;
         case INSTRUCTION_MSR: {
-            // TODO: check this with the manual
-            u32 *sr = &cpu->cpsr;
-            if (decoded_instruction.P) {
-                sr = get_spsr_current_mode(cpu);
-            }
-
+            u32 value;
             if (decoded_instruction.I) {
-                u8 carry = 0;
-                
                 u8 imm = decoded_instruction.source_operand & 0xFF;
                 u32 rotate = (decoded_instruction.source_operand >> 8) & 0xF;
                 // NOTE: This value is zero extended to 32 bits, and then subject to a rotate right by twice the value in the rotate field.
                 rotate *= 2;
 
-                u32 value = apply_shift(imm, rotate, SHIFT_TYPE_ROTATE_RIGHT, &carry);
-                *sr = value;
+                value = rotate_right(imm, rotate, 8);
             } else {
-                *sr = *get_register(cpu, decoded_instruction.rm);
+                value = *get_register(cpu, decoded_instruction.rm);
             }
+
+            u32 field_mask = decoded_instruction.mask;
+            if (decoded_instruction.P == 0) {
+                if (in_privileged_mode(cpu)) {
+                    if (((field_mask >> 0) & 1)) {
+                        cpu->cpsr = cpu->cpsr & 0xFFFFFF00;
+                        cpu->cpsr |=   (value & 0x000000FF);
+                    }
+                    if (((field_mask >> 1) & 1)) {
+                        cpu->cpsr = cpu->cpsr & 0xFFFF00FF;
+                        cpu->cpsr |=   (value & 0x0000FF00);
+                    }
+                    if (((field_mask >> 2) & 1)) {
+                        cpu->cpsr = cpu->cpsr & 0xFF00FFFF;
+                        cpu->cpsr |=   (value & 0x00FF0000);
+                    }
+                    if (((field_mask >> 3) & 1)) {
+                        cpu->cpsr = cpu->cpsr & 0x00FFFFFF;
+                        cpu->cpsr |=   (value & 0xFF000000);
+                    }
+                }
+            } else {
+                if (current_mode_has_spsr(cpu)) {
+                    u32 *sr = get_spsr_current_mode(cpu);
+
+                    if (((field_mask >> 0) & 1)) {
+                        *sr =     *sr & 0xFFFFFF00;
+                        *sr |= (value & 0x000000FF);
+                    }
+                    if (((field_mask >> 1) & 1)) {
+                        *sr =     *sr & 0xFFFF00FF;
+                        *sr |= (value & 0x0000FF00);
+                    }
+                    if (((field_mask >> 2) & 1)) {
+                        *sr =     *sr & 0xFF00FFFF;
+                        *sr |= (value & 0x00FF0000);
+                    }
+                    if (((field_mask >> 3) & 1)) {
+                        *sr =     *sr & 0x00FFFFFF;
+                        *sr |= (value & 0xFF000000);
+                    }
+                }
+
+            }
+
+
+            // u32 *sr = &cpu->cpsr;
+            // if (decoded_instruction.P) {
+            //     sr = get_spsr_current_mode(cpu);
+            // }
+
+            // if (decoded_instruction.I) {
+            //     u8 imm = decoded_instruction.source_operand & 0xFF;
+            //     u32 rotate = (decoded_instruction.source_operand >> 8) & 0xF;
+            //     // NOTE: This value is zero extended to 32 bits, and then subject to a rotate right by twice the value in the rotate field.
+            //     rotate *= 2;
+
+            //     u32 value = rotate_right(imm, rotate, 8);
+            //     *sr = value;
+            // } else {
+            //     *sr = *get_register(cpu, decoded_instruction.rm);
+            // }
         } break;
 
         default: {
@@ -1522,7 +1576,7 @@ process_single_data_transfer()
                 }
 
                 u8 rotate_value = 8 * (base & 0b11);
-                value = rotate_right(*address, rotate_value);
+                value = rotate_right(*address, rotate_value, 32);
 
                 if (*rd == 15) {
                     cpu->pc = value & 0xFFFFFFFC; // NOTE: From "ARM Architecture Reference Manual"
@@ -1720,6 +1774,10 @@ process_halfword_and_signed_data_transfer()
 static void
 process_block_data_transfer()
 {
+    if (decoded_instruction.S) {
+        assert(!"Not handled");
+    }
+
     u8 P = decoded_instruction.P;
     switch (decoded_instruction.type) {
         case INSTRUCTION_LDM: {
@@ -1880,7 +1938,7 @@ process_single_data_swap()
             } else {
                 u32 *address = (u32 *)get_memory_at(cpu, &memory, *rn);
                 int rotate_value = 8 * (*rn & 0b11);
-                u32 temp = rotate_right(*address, rotate_value);
+                u32 temp = rotate_right(*address, rotate_value, 32);
 
                 *address = *rm;
                 *rd = temp;
@@ -2305,6 +2363,7 @@ data_processing:
                         .type = INSTRUCTION_MSR,
                         .P = (current_instruction >> 22) & 1,
                         .rm = current_instruction & 0xF,
+                        .mask = (current_instruction >> 16) & 0xF,
                     };
                 } break;
                 case 0b101000: {
@@ -2312,6 +2371,8 @@ data_processing:
                         .type = INSTRUCTION_MSR,
                         .P = (current_instruction >> 22) & 1,
                         .source_operand = current_instruction & 0xFFF,
+                        .I = 1, // To be recognized as immediate
+                        .mask = (current_instruction >> 16) & 0xF,
                     };
                 } break;
                 default: {

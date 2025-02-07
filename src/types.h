@@ -202,6 +202,45 @@ print_cpu_state(CPU *cpu)
     printf("----------------\n");
 }
 
+bool
+in_privileged_mode(CPU *cpu)
+{
+    u8 mode = (cpu->cpsr & 0b11111);
+    switch (mode) {
+        case MODE_USER:
+            return false;
+        case MODE_FIQ:
+        case MODE_IRQ:
+        case MODE_SUPERVISOR:
+        case MODE_ABORT:
+        case MODE_UNDEFINED:
+        case MODE_SYSTEM:
+            return true;
+        default: assert(!"Unknown mode");
+    }
+
+    return false; // Unreachable
+}
+
+bool
+current_mode_has_spsr(CPU *cpu)
+{
+    u8 mode = (cpu->cpsr & 0b11111);
+    switch (mode) {
+        case MODE_USER:
+        case MODE_SYSTEM:
+            return false;
+        case MODE_FIQ:
+        case MODE_IRQ:
+        case MODE_SUPERVISOR:
+        case MODE_ABORT:
+        case MODE_UNDEFINED:
+            return true;
+        default: assert(!"Unknown mode");
+    }
+
+    return false; // Unreachable
+}
 
 u32 *
 get_spsr_current_mode(CPU *cpu)
@@ -213,7 +252,7 @@ get_spsr_current_mode(CPU *cpu)
         case MODE_ABORT:        return &cpu->spsr_abt;
         case MODE_IRQ:          return &cpu->spsr_irq;
         case MODE_UNDEFINED:    return &cpu->spsr_und;
-        default: assert("!User and System mode does not have SPSR");
+        default: assert(!"User and System mode does not have SPSR");
     }
 
     return 0;
@@ -745,6 +784,7 @@ typedef struct Instruction {
     u8 H1;
     u8 H2;
     u8 op;
+    u32 mask;
 
     u32 address;
 #ifdef _DEBUG
@@ -764,12 +804,12 @@ void thumb_execute();
 
 
 static u32
-rotate_right(u32 value, u32 shift)
+rotate_right(u32 value, u32 shift, u8 bits)
 {
     if (shift == 0) return value;
 
     u32 value_to_rotate = value & ((1 << shift) - 1);
-    u32 rotate_masked = value_to_rotate << (32 - shift);
+    u32 rotate_masked = value_to_rotate << (bits - shift);
 
     return (value >> shift) | rotate_masked;
 }
@@ -799,7 +839,7 @@ apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
         case SHIFT_TYPE_ROTATE_RIGHT: {
             *carry = (value >> (shift - 1) & 1);
 
-            return rotate_right(value, shift);
+            return rotate_right(value, shift, 32);
         } break;
     }
 
