@@ -315,39 +315,58 @@ thumb_execute()
 
     switch (decoded_instruction.type) {
         case INSTRUCTION_MOVE_SHIFTED_REGISTER: {
-            int shift = decoded_instruction.offset;
+            u32 shift = decoded_instruction.offset;
             u32 value = *get_register(cpu, decoded_instruction.rs);
-            u8 carry = 0;
-            u32 result = 0;
+            u32 *rd = get_register(cpu, decoded_instruction.rd);
             
             switch (decoded_instruction.op) {
-                case THUMB_SHIFT_TYPE_LOGICAL_LEFT: {
-                    carry = (value >> (16 - shift)) & 1;
+                case THUMB_SHIFT_TYPE_LOGICAL_LEFT: { // LSL
+                    if (shift == 0) {
+                        *rd = value;
+                    } else {
+                        set_condition_C((value >> (32 - shift)) & 1);
+                        *rd = value << shift;
+                    }
 
-                    result = value << shift;
+                    set_condition_Z(*rd == 0);
+                    set_condition_N((*rd >> 31) & 1);
                 } break;
 
-                case THUMB_SHIFT_TYPE_LOGICAL_RIGHT: {
-                    carry = (value >> (shift - 1)) & 1;
-
-                    result = value >> shift;
+                case THUMB_SHIFT_TYPE_LOGICAL_RIGHT: { // LSR
+                    if (shift == 0) {
+                        set_condition_C((*rd >> 31) & 1);
+                        *rd = 0;
+                    } else {
+                        set_condition_C((*rd >> (shift - 1)) & 1);
+                        *rd = value >> shift;
+                    }
+                    
+                    set_condition_Z(*rd == 0);
+                    set_condition_N((*rd >> 31) & 1);
                 } break;
 
-                case THUMB_SHIFT_TYPE_ARITHMETIC_RIGHT: {
-                    carry = (value >> (shift - 1)) & 1;
+                case THUMB_SHIFT_TYPE_ARITHMETIC_RIGHT: { // ASR
+                    if (shift == 0) {
+                        u8 msb = (value >> 31) & 1;
+                        set_condition_C(msb);
 
-                    u8 msb = (value >> 15) & 1;
-                    u16 msb_replicated = (-msb << (16 - shift));
+                        if (msb == 0) {
+                            *rd = 0;
+                        } else {
+                            *rd = 0xFFFFFFFF;
+                        }
+                    } else {
+                        set_condition_C((value >> (shift - 1)) & 1);
 
-                    result = (value >> shift) | msb_replicated;
+                        u8 msb = (value >> 31) & 1;
+                        u32 msb_replicated = (-msb << (32 - shift));
+                        *rd = (value >> shift) | msb_replicated;
+                    }
+
+                    set_condition_Z(*rd == 0);
+                    set_condition_N((*rd >> 31) & 1);
                 } break;
             }
-
-            *get_register(cpu, decoded_instruction.rd) = result;
-
-            set_condition_C(carry);
-            set_condition_Z(result == 0);
-            set_condition_N((result >> 31) & 1);
         } break;
         case INSTRUCTION_ADD_SUBTRACT: {
             u32 first_value = *get_register(cpu, decoded_instruction.rs);
