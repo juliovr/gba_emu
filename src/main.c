@@ -375,27 +375,25 @@ thumb_execute()
 
             u32 *rd = get_register(cpu, decoded_instruction.rd);
 
-            if (decoded_instruction.op) {
+            if (decoded_instruction.op) { // SUB
                 result = first_value - second_value;
 
                 set_condition_C(second_value <= first_value ? 1 : 0);
                 set_condition_V((*rd & 0x80000000) != (result & 0x80000000));
-            } else {
+            } else { // ADD
                 result = first_value + second_value;
 
                 set_condition_C((result < second_value) ? 1 : 0);
                 set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
 
-            *get_register(cpu, decoded_instruction.rd) = result;
+            *rd = result;
             
             set_condition_Z(result == 0);
             set_condition_N((result >> 31) & 1);
         } break;
         case INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE: {
             u32 result = 0;
-            u32 old_value = *get_register(cpu, decoded_instruction.rd);
-
             u32 *rd = get_register(cpu, decoded_instruction.rd);
 
             switch (decoded_instruction.op) {
@@ -447,15 +445,6 @@ thumb_execute()
                     store_result = true;
                 } break;
                 case 2: { // LSL
-                    // result = *rd << *rs;
-                    // store_result = true;
-
-                    // if (*rs) {
-                    //     set_condition_C((result >> 31) & 1);
-                    // }
-
-                    // Mimic the spec of ARM Architecture Reference Manual. Seems too complicated.
-                    // TODO: If works, let's see if the above simpler code works as well.
                     u8 rs_value = (u8)*rs;
                     if (rs_value == 0) {
                         store_result = false;
@@ -474,13 +463,6 @@ thumb_execute()
                     }
                 } break;
                 case 3: { // LSR
-                    // if (*rs) {
-                    //     set_condition_C((*rd >> (*rs - 1)) & 1);
-                    // }
-                    //
-                    // result = *rd >> *rs;
-                    // store_result = true;
-
                     u8 rs_value = (u8)*rs;
                     if (rs_value == 0) {
                         store_result = false;
@@ -499,17 +481,6 @@ thumb_execute()
                     }
                 } break;
                 case 4: { // ASR
-                    // if (*rs) {
-                    //     set_condition_C((*rd >> (*rs - 1)) & 1);
-                    // }
-
-                    // u8 shift = *rs & 0xFF;
-                    // u8 msb = (*rd >> 31) & 1;
-                    // u32 msb_replicated = (-msb << (32 - shift));
-                    //
-                    // result = (*rd >> shift) | msb_replicated;
-                    // store_result = true;
-
                     u8 rs_value = (u8)*rs;
                     if (rs_value == 0) {
                         store_result = false;
@@ -548,19 +519,6 @@ thumb_execute()
                     set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 } break;
                 case 7: { // ROR
-                    // if ((*rs & 0xF) == 0) {
-                    //     set_condition_C((*rd >> 31) & 1);
-                    // } else {
-                    //     set_condition_C((*rd >> (((*rs & 0xF) - 1)) & 1));
-                    // }
-                    //
-                    // u8 shift = *rs & 0xFF;
-                    // u32 value_to_rotate = *rd & ((1 << shift) - 1);
-                    // u32 rotate_masked = value_to_rotate << (32 - shift);
-                    //
-                    // result = (*rd >> shift) | rotate_masked;
-                    // store_result = true;
-
                     u8 rs_value = (u8)*rs;
                     if (rs_value == 0) {
                         store_result = false;
@@ -653,10 +611,10 @@ thumb_execute()
                 case 0: { // ADD
                     result = *rd + *rs;
                     
-                    set_condition_C((result < *rs) ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
-                    set_condition_Z(result == 0);
-                    set_condition_N((result >> 31) & 1);
+                    // set_condition_C((result < *rs) ? 1 : 0);
+                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    // set_condition_Z(result == 0);
+                    // set_condition_N((result >> 31) & 1);
                     
                     *rd = result;
                 } break;
@@ -675,11 +633,10 @@ thumb_execute()
                 } break;
                 case 3: { // BX
                     cpu->pc = *rs & (-2);
+                    current_instruction = 0;
 
                     u8 thumb_mode = *rs & 1;
                     set_control_bit_T(thumb_mode);
-
-                    current_instruction = 0;
                 } break;
             }
         } break;
