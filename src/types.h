@@ -789,6 +789,7 @@ typedef struct Instruction {
     u32 address;
 #ifdef _DEBUG
     u32 encoding;
+    u32 index;
 #endif
 } Instruction;
 
@@ -815,6 +816,16 @@ rotate_right(u32 value, u32 shift, u8 bits)
 }
 
 static u32
+arithmetic_shift_right(u32 value, u8 shift)
+{
+    u8 msb = (value >> 31) & 1;
+    u32 msb_replicated = (-msb << (32 - shift));
+
+    return (value >> shift) | msb_replicated;
+}
+
+// TODO: get rid of this because depending on the instruction and shift type the value and carry are set differently.
+static u32
 apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
 {
     switch (shift_type) {
@@ -831,19 +842,50 @@ apply_shift(u32 value, u32 shift, ShiftType shift_type, u8 *carry)
         case SHIFT_TYPE_ARITHMETIC_RIGHT: {
             *carry = (value >> (shift - 1) & 1);
             
-            u8 msb = (value >> 31) & 1;
-            u32 msb_replicated = (-msb << (32 - shift));
-
-            return (value >> shift) | msb_replicated;
+            
         } break;
         case SHIFT_TYPE_ROTATE_RIGHT: {
-            *carry = (value >> (shift - 1) & 1);
-
-            return rotate_right(value, shift, 32);
+            u32 result = rotate_right(value, shift, 32);
+            
+            *carry = (result >> 31) & 1;
+            
+            return result;
         } break;
     }
 
     return value;
+}
+
+/**
+ * actual_bits_value: how many bits are used in value.
+ */
+static u32
+left_shift_sign_extended(u32 value, u8 actual_bits_value, u8 shift)
+{
+    u8 sign = (value >> (actual_bits_value - 1)) & 1;
+    u32 value_sign_extended = (-sign << (actual_bits_value)) | value;
+
+    return (value_sign_extended << shift);
+}
+
+static u32
+sign_extend(u32 value, u8 actual_bits_value)
+{
+    u8 sign = (value >> (actual_bits_value - 1)) & 1;
+    u32 value_sign_extended = (-sign << (actual_bits_value)) | value;
+
+    return value_sign_extended;
+}
+
+u8 number_set_bits(u32 n)
+{
+    u8 result = 0;
+    while (n > 0) {
+        if (n & 1) result++;
+        n >>= 1;
+    }
+
+    return result;
 }
 
 #endif

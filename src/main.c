@@ -23,6 +23,8 @@ CPU *cpu = &gba_cpu;
 
 GBAMemory memory = {0};
 
+u32 counter = 0;
+
 //
 // Control Bits
 //
@@ -109,12 +111,16 @@ load_cartridge_into_memory(char *filename)
     } else {
         fseek(file, 0, SEEK_END);
         int size = ftell(file);
-        fseek(file, 0, SEEK_SET);
-
+        
         assert(size <= 32*MEGABYTE);
-
+        
+        fseek(file, 0, SEEK_SET);
         fread(memory.game_pak_rom, size, 1, file);
+
+        fseek(file, 0, SEEK_SET);
         fread(memory.game_pak_rom_wait_state_1, size, 1, file);
+        
+        fseek(file, 0, SEEK_SET);
         fread(memory.game_pak_rom_wait_state_2, size, 1, file);
         
         fclose(file);
@@ -283,34 +289,13 @@ should_execute_instruction(Condition condition)
     }
 }
 
-/**
- * actual_bits_value: how many bits are used in value.
- */
-static u32
-left_shift_sign_extended(u32 value, u8 actual_bits_value, u8 shift)
-{
-    u8 sign = (value >> (actual_bits_value - 1)) & 1;
-    u32 value_sign_extended = (-sign << (actual_bits_value)) | value;
-
-    return (value_sign_extended << shift);
-}
-
-static u32
-sign_extend(u32 value, u8 actual_bits_value)
-{
-    u8 sign = (value >> (actual_bits_value - 1)) & 1;
-    u32 value_sign_extended = (-sign << (actual_bits_value)) | value;
-
-    return value_sign_extended;
-}
-
 
 void
 thumb_execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_thumb_execute;
     
-    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr);
+    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
 
 
     switch (decoded_instruction.type) {
@@ -748,6 +733,7 @@ thumb_execute()
             }
         } break;
         case INSTRUCTION_LOAD_ADDRESS: {
+            assert(decoded_instruction.rd != 15);
             if (decoded_instruction.S) {
                 // SP
                 *get_register(cpu, decoded_instruction.rd) = cpu->sp + (decoded_instruction.value_8 << 2);
@@ -1071,6 +1057,7 @@ thumb_swi:
 
 #ifdef _DEBUG
     decoded_instruction.encoding = current_instruction;
+    decoded_instruction.index = counter++;
 #endif
 }
 
@@ -1100,11 +1087,10 @@ process_branch()
 
         case INSTRUCTION_BX: {
             cpu->pc = *get_register(cpu, decoded_instruction.rn) & (-2); // NOTE: PC must be 16-bit align. This clears out the lsb (-2 is 0b1110).
+            current_instruction = 0;
 
             u8 thumb_mode = *get_register(cpu, decoded_instruction.rn) & 1;
             set_control_bit_T(thumb_mode);
-
-            current_instruction = 0;
         } break;
 
         default: {
@@ -1116,33 +1102,146 @@ process_branch()
 static void
 process_data_processing()
 {
-    u8 carry = 0; // TODO: if the set_condition_C below works well, get rid of this variable.
-    u32 second_operand;
-    ShiftType shift_type;
-    u32 shift_value = 0;
+    u8 carry = 0;
+    u32 second_operand = 0;
     if (decoded_instruction.I) {
+        // Immediate with rotate right
+
         u8 imm = decoded_instruction.second_operand & 0xFF;
         u32 rotate = (decoded_instruction.second_operand >> 8) & 0xF;
         // NOTE: This value is zero extended to 32 bits, and then subject to a rotate right by twice the value in the rotate field.
         rotate *= 2;
 
-        shift_type = SHIFT_TYPE_ROTATE_RIGHT;
-        shift_value = rotate;
-
-        second_operand = apply_shift(imm, rotate, shift_type, &carry);
+        // second_operand = apply_shift(imm, rotate, shift_type, &carry);
+        second_operand = rotate_right(imm, rotate, 32);
+        if (rotate == 0) {
+            carry = CONDITION_C;
+        } else {
+            carry = (second_operand >> 31) & 1;
+        }
     } else {
-        u8 rm = decoded_instruction.second_operand & 0xF;
+        // From register
+
+        u8 rm_n = decoded_instruction.second_operand & 0xF;
+        u32 rm = *get_register(cpu, rm_n);
         u8 shift = (decoded_instruction.second_operand >> 4) & 0xFF;
-        shift_type = (ShiftType)((shift >> 1) & 0b11);
+        ShiftType shift_type = (ShiftType)((shift >> 1) & 0b11);
         if (shift & 1) {
             // Shift register
             u8 rs = (shift >> 4) & 0xF; // Register to the value to shift.
-            shift_value = (u8)(*get_register(cpu, rs) & 0xF);
-            second_operand = apply_shift(*get_register(cpu, rm), shift_value, shift_type, &carry);
+            u8 shift_value = (u8)(*get_register(cpu, rs));
+            // second_operand = apply_shift(rm, shift_value, shift_type, &carry);
+
+            switch (shift_type) {
+                case SHIFT_TYPE_LOGICAL_LEFT: {
+                    if (shift_value == 0) {
+                        second_operand = rm;
+                        carry = CONDITION_C;
+                    } else if (shift_value < 32) {
+                        second_operand = rm << shift_value;
+                        carry = (rm >> (32 - shift_value)) & 1;
+                    } else if (shift_value == 32) {
+                        second_operand = 0;
+                        carry = rm & 1;
+                    } else {
+                        second_operand = 0;
+                        carry = 0;
+                    }
+                } break;
+                case SHIFT_TYPE_LOGICAL_RIGHT: {
+                    if (shift_value == 0) {
+                        second_operand = rm;
+                        carry = CONDITION_C;
+                    } else if (shift_value < 32) {
+                        second_operand = rm >> shift_value;
+                        carry = (rm >> (shift_value - 1)) & 1;
+                    } else if (shift_value == 32) {
+                        second_operand = 0;
+                        carry = (rm >> 31) & 1;
+                    } else {
+                        second_operand = 0;
+                        carry = 0;
+                    }
+                } break;
+                case SHIFT_TYPE_ARITHMETIC_RIGHT: {
+                    if (shift_value == 0) {
+                        second_operand = rm;
+                        carry = CONDITION_C;
+                    } else if (shift_value < 32) {
+                        second_operand = arithmetic_shift_right(rm, shift_value);
+                        carry = (rm >> (shift_value - 1)) & 1;
+                    } else {
+                        if (((rm >> 31) & 1) == 0) {
+                            second_operand = 0;
+                            carry = (rm >> 31) & 1;
+                        } else {
+                            second_operand = 0xFFFFFFFF;
+                            carry = (rm >> 31) & 1;
+                        }
+                    }
+                } break;
+                case SHIFT_TYPE_ROTATE_RIGHT: {
+                    if (shift_value == 0) {
+                        second_operand = rm;
+                        carry = CONDITION_C;
+                    } else if ((shift_value & 0xF) == 0) {
+                        second_operand = rm;
+                        carry = (rm >> 31) & 1;
+                    } else {
+                        second_operand = rotate_right(rm, shift_value & 0xF, 32);
+                        carry = (rm >> ((shift_value & 0xF) - 1)) & 1;
+                    }
+                } break;
+            }
+
         } else {
-            // Shift amount
-            shift_value = (shift >> 3) & 0b11111;
-            second_operand = apply_shift(*get_register(cpu, rm), shift_value, shift_type, &carry);
+            // Shift immediate 5-bit value
+            u8 shift_value = (shift >> 3) & 0b11111;
+            // second_operand = apply_shift(*get_register(cpu, rm), shift_value, shift_type, &carry);
+            
+            switch (shift_type) {
+                case SHIFT_TYPE_LOGICAL_LEFT: {
+                    if (shift_value == 0) {
+                        second_operand = rm;
+                        carry = CONDITION_C;
+                    } else {
+                        second_operand = rm << shift_value;
+                        carry = (rm >> (32 - shift_value)) & 1;
+                    }
+                } break;
+                case SHIFT_TYPE_LOGICAL_RIGHT: {
+                    if (shift_value == 0) {
+                        second_operand = 0;
+                        carry = (rm >> 31) & 1;
+                    } else {
+                        second_operand = rm >> shift_value;
+                        carry = (rm >> (shift_value - 1)) & 1;
+                    }
+                } break;
+                case SHIFT_TYPE_ARITHMETIC_RIGHT: {
+                    if (shift_value == 0) {
+                        if (((rm >> 31) & 1) == 0) {
+                            second_operand = 0;
+                            carry = (rm >> 31) & 1;
+                        } else {
+                            second_operand = 0xFFFFFFFF;
+                            carry = (rm >> 31) & 1;
+                        }
+                    } else {
+                        second_operand = arithmetic_shift_right(rm, shift_value);
+                        carry = (rm >> (shift_value - 1)) & 1;
+                    }
+                } break;
+                case SHIFT_TYPE_ROTATE_RIGHT: {
+                    if (shift_value == 0) {
+                        second_operand = (CONDITION_C << 31) | (rm >> 1);
+                        carry = rm & 1;
+                    } else {
+                        second_operand = rotate_right(rm, shift_value, 32);
+                        carry = (rm >> (shift_value - 1)) & 1;
+                    }
+                } break;
+            }
         }
     }
 
@@ -1785,13 +1884,18 @@ process_block_data_transfer()
                         }
 
                         if (register_index == 15) {
+                            assert(!"Check if I have to use the P flag (I think I do)");
                             u32 value = *(u32 *)get_memory_at(cpu, &memory, base_address);
-                            cpu->pc = value & 0xFFFFFFFC;
-                            current_instruction = 0;
+                            if (value != 0) {
+                                cpu->pc = value & 0xFFFFFFFC;
+                                current_instruction = 0;
+                            }
 
                             base_address += 4;
                         } else {
-                            *get_register(cpu, (u8)register_index) = *address;
+                            if (address != 0) {
+                                *get_register(cpu, (u8)register_index) = *address;
+                            }
                         }
                     }
 
@@ -2007,7 +2111,7 @@ execute()
         goto exit_execute;
     }
 
-    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr);
+    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
     
     InstructionCategory category = instruction_categories[decoded_instruction.type];
     switch (category) {
@@ -2374,6 +2478,7 @@ data_processing:
 
 #ifdef _DEBUG
     decoded_instruction.encoding = current_instruction;
+    decoded_instruction.index = counter++;
 #endif
 
     current_instruction = 0;
