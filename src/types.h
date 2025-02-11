@@ -16,7 +16,6 @@ typedef int32_t  s32;
 
 #define true 1
 #define false 0
-typedef int bool;
 
 #if _DEBUG
 #define assert(expression)                                                                                  \

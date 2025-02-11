@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <math.h>
+#include "../include/raylib.h"
 #include "types.h"
 
 
@@ -16,7 +18,7 @@
 #endif
 
 
-bool is_running = true;
+int is_running = true;
 
 CPU gba_cpu = {0};
 CPU *cpu = &gba_cpu;
@@ -257,7 +259,7 @@ u32 current_instruction;
 
 Instruction decoded_instruction;
 
-static bool
+static int
 should_execute_instruction(Condition condition)
 {
     switch (condition) {
@@ -418,7 +420,7 @@ thumb_execute()
             u32 *rs = get_register(cpu, decoded_instruction.rs);
 
             u32 result = 0;
-            bool store_result = false;
+            int store_result = false;
 
             switch (decoded_instruction.op) {
                 case 0: { // AND
@@ -757,7 +759,7 @@ thumb_execute()
             if (decoded_instruction.L) { // POP
                 int register_index = 0;
                 while (register_list) {
-                    bool register_index_set = register_list & 1;
+                    int register_index_set = register_list & 1;
                     if (register_index_set) {
                         u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
                         *get_register(cpu, (u8)register_index) = *address;
@@ -789,7 +791,7 @@ thumb_execute()
                 }
 
                 while (register_list) {
-                    bool register_index_set = (register_list >> 7) & 1;
+                    int register_index_set = (register_list >> 7) & 1;
                     if (register_index_set) {
                         sp -= 4;
                         
@@ -812,7 +814,7 @@ thumb_execute()
 
             int register_index = 0;
             while (register_list) {
-                bool register_index_set = register_list & 1;
+                int register_index_set = register_list & 1;
                 if (register_index_set) {
                     u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
 
@@ -835,7 +837,7 @@ thumb_execute()
         } break;
         case INSTRUCTION_CONDITIONAL_BRANCH: {
             Condition condition = (Condition)decoded_instruction.condition;
-            bool should_execute = should_execute_instruction(condition);
+            int should_execute = should_execute_instruction(condition);
 
             if (should_execute) {
                 u32 offset = left_shift_sign_extended(decoded_instruction.offset, 8, 1);
@@ -1247,7 +1249,7 @@ process_data_processing()
     }
 
 
-    bool store_result = false;
+    int store_result = false;
     u32 result = 0;
 
     u32 rn = *get_register(cpu, decoded_instruction.rn);
@@ -1905,7 +1907,7 @@ process_block_data_transfer()
             while (register_list) {
                 if (decoded_instruction.U) {
                     // Increment
-                    bool register_index_set = register_list & 1;
+                    int register_index_set = register_list & 1;
                     if (register_index_set) {
                         u32 *address;
                         if (P) {
@@ -1935,7 +1937,7 @@ process_block_data_transfer()
                             if (address != 0) {
                                 value = *address;
                             }
-                            
+
                             *get_register(cpu, (u8)register_index) = value;
                         }
                     }
@@ -1945,7 +1947,7 @@ process_block_data_transfer()
                 } else {
                     // Decrement
                     assert(!"Implemented checking the manual, but when reach this point, let's re-check the implementation (just in case)");
-                    bool register_index_set = (register_list >> 15) & 1;
+                    int register_index_set = (register_list >> 15) & 1;
                     if (register_index_set) {
                         u32 *address;
                         if (P) {
@@ -1991,7 +1993,7 @@ process_block_data_transfer()
             while (register_list) {
                 if (decoded_instruction.U) {
                     // Increment
-                    bool register_index_set = register_list & 1;
+                    int register_index_set = register_list & 1;
                     if (register_index_set) {
                         u32 *address;
                         if (P) {
@@ -2014,7 +2016,7 @@ process_block_data_transfer()
                     register_list >>= 1;
                 } else {
                     // Decrement
-                    bool register_index_set = (register_list >> 15) & 1;
+                    int register_index_set = (register_list >> 15) & 1;
                     if (register_index_set) {
                         u32 *address;
                         if (P) {
@@ -2540,21 +2542,55 @@ fetch()
 }
 
 
-static void
-process_instructions()
+// static void
+// run()
+// {
+//     // Emulating pipelining.
+//     while (is_running) {
+//         execute();
+//         decode();
+//         fetch();
+//     }
+// }
+
+// Video
+#define SCREEN_WIDTH            (240)
+#define SCREEN_HEIGHT           (160)
+#define SCREEN_SIZE             (SCREEN_WIDTH*SCREEN_HEIGHT)
+#define SCALE                   (10)    /* Pixel scale */
+#define WINDOW_WIDTH            (SCREEN_WIDTH*SCALE)
+#define WINDOW_HEIGHT           (SCREEN_HEIGHT*SCALE)
+#define FPS                     (60)
+
+// Audio
+#define MAX_SAMPLES             512
+#define MAX_SAMPLES_PER_UPDATE  4096
+#define SAMPLE_RATE             44100
+#define SAMPLE_SIZE             16
+#define NUMBER_OF_CHANNELS      2
+
+static float frequency = 440.0f;
+// Index for audio rendering
+static float sine_idx = 0.0f;
+
+// Audio input processing callback
+static void AudioInputCallback(void *buffer, unsigned int frames)
 {
-    // Emulating pipelining.
-    while (is_running) {
-        execute();
-        decode();
-        fetch();
+    float incr = frequency/SAMPLE_RATE;
+    short *d = (short *)buffer;
+
+    for (unsigned int i = 0; i < frames; i++)
+    {
+        d[i] = (short)(32000.0f*sinf(2*PI*sine_idx));
+        sine_idx += incr;
+        if (sine_idx > 1.0f) {
+            sine_idx -= 1.0f;
+        }
     }
 }
 
-
 int main(int argc, char *argv[])
 {
-#if 1
     init_gba();
     
     char *filename = "Donkey Kong Country 2.gba";
@@ -2566,17 +2602,66 @@ int main(int argc, char *argv[])
     // CartridgeHeader *header = (CartridgeHeader *)memory.game_pak_rom;
     // printf("fixed_value = 0x%X, expected = 0x96\n", header->fixed_value);
 
-    process_instructions();
+
+    InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, filename);
+    InitAudioDevice();
+
+    SetTargetFPS(FPS);
+
+    SetAudioStreamBufferSizeDefault(MAX_SAMPLES_PER_UPDATE);
+
+    // Init raw audio stream (sample rate: 44100, sample size: 16bit-short, channels: 1-mono)
+    AudioStream stream = LoadAudioStream(SAMPLE_RATE, SAMPLE_SIZE, NUMBER_OF_CHANNELS);
+
+    SetAudioStreamCallback(stream, AudioInputCallback);
+
+    PlayAudioStream(stream);    // Start processing stream buffer (initialization of audio)
+    PauseAudioStream(stream);   //      but stop it immediately
+
+    // Main loop
+    while (!WindowShouldClose()) {
+        if (!is_running) {
+            break;
+        }
+
+        execute();
+        decode();
+        fetch();
+        
+        // if (state->sound_timer > 0) {
+        //     ResumeAudioStream(stream);
+        // } else {
+        //     PauseAudioStream(stream);
+        // }
+
+        BeginDrawing();
+            for (int i = 0; i < SCREEN_HEIGHT; i++) {
+                for (int j = 0; j < SCREEN_WIDTH; j++) {
+                    int index = (i * SCREEN_WIDTH) + j;
+                    // Color color = (state->screen[index] == 1) ? WHITE : BLACK;
+                    Color color = RED;
+                    float x = (float)j*SCALE;
+                    float y = (float)i*SCALE;
+                    float width = SCALE;
+                    float height = SCALE;
+
+                    Rectangle pixel = { x, y, width, height };
+                    DrawRectangleRec(pixel, color);
+                }
+            }
+        EndDrawing();
+    }
+
+    
+    // run();
 
     print_cpu_state(cpu);
 
     printf("Exit OK\n");
-#else
-// #include "test_B.c"
-    init_gba();
 
-    run_tests();
-#endif
+    UnloadAudioStream(stream);   // Close raw audio stream and delete buffers from RAM
+    CloseAudioDevice();
+    CloseWindow();
 
     return 0;
 }
