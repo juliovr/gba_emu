@@ -18,8 +18,6 @@
 #endif
 
 
-int is_running = true;
-
 CPU gba_cpu = {0};
 CPU *cpu = &gba_cpu;
 
@@ -154,6 +152,47 @@ load_bios_into_memory()
     return 0;
 }
 
+
+// I/O Registers
+#define IO_DISPCNT      ((u16 *)get_memory_at(cpu, &memory, 0x4000000))
+#define IO_DISPSTAT     ((u16 *)get_memory_at(cpu, &memory, 0x4000004))
+#define IO_VCOUNT       ((u16 *)get_memory_at(cpu, &memory, 0x4000006))
+#define IO_BG0CNT       ((u16 *)get_memory_at(cpu, &memory, 0x4000008))
+#define IO_BG1CNT       ((u16 *)get_memory_at(cpu, &memory, 0x400000A))
+#define IO_BG2CNT       ((u16 *)get_memory_at(cpu, &memory, 0x400000C))
+#define IO_BG3CNT       ((u16 *)get_memory_at(cpu, &memory, 0x400000E))
+#define IO_BG0HOFS      ((u16 *)get_memory_at(cpu, &memory, 0x4000010))
+#define IO_BG0VOFS      ((u16 *)get_memory_at(cpu, &memory, 0x4000012))
+#define IO_BG1HOFS      ((u16 *)get_memory_at(cpu, &memory, 0x4000014))
+#define IO_BG1VOFS      ((u16 *)get_memory_at(cpu, &memory, 0x4000016))
+#define IO_BG2HOFS      ((u16 *)get_memory_at(cpu, &memory, 0x4000018))
+#define IO_BG2VOFS      ((u16 *)get_memory_at(cpu, &memory, 0x400001A))
+#define IO_BG3HOFS      ((u16 *)get_memory_at(cpu, &memory, 0x400001C))
+#define IO_BG3VOFS      ((u16 *)get_memory_at(cpu, &memory, 0x400001E))
+#define IO_BG2PA        ((u16 *)get_memory_at(cpu, &memory, 0x4000020))
+#define IO_BG2PB        ((u16 *)get_memory_at(cpu, &memory, 0x4000022))
+#define IO_BG2PC        ((u16 *)get_memory_at(cpu, &memory, 0x4000024))
+#define IO_BG2PD        ((u16 *)get_memory_at(cpu, &memory, 0x4000026))
+#define IO_BG2X         ((u32 *)get_memory_at(cpu, &memory, 0x4000028))
+#define IO_BG2Y         ((u32 *)get_memory_at(cpu, &memory, 0x400002C))
+#define IO_BG3PA        ((u16 *)get_memory_at(cpu, &memory, 0x4000030))
+#define IO_BG3PB        ((u16 *)get_memory_at(cpu, &memory, 0x4000032))
+#define IO_BG3PC        ((u16 *)get_memory_at(cpu, &memory, 0x4000034))
+#define IO_BG3PD        ((u16 *)get_memory_at(cpu, &memory, 0x4000036))
+#define IO_BG3X         ((u32 *)get_memory_at(cpu, &memory, 0x4000038))
+#define IO_BG3Y         ((u32 *)get_memory_at(cpu, &memory, 0x400003C))
+#define IO_WIN0H        ((u16 *)get_memory_at(cpu, &memory, 0x4000040))
+#define IO_WIN1H        ((u16 *)get_memory_at(cpu, &memory, 0x4000042))
+#define IO_WIN0V        ((u16 *)get_memory_at(cpu, &memory, 0x4000044))
+#define IO_WIN1V        ((u16 *)get_memory_at(cpu, &memory, 0x4000046))
+#define IO_WININ        ((u16 *)get_memory_at(cpu, &memory, 0x4000048))
+#define IO_WINOUT       ((u16 *)get_memory_at(cpu, &memory, 0x400004A))
+#define IO_MOSAIC       ((u16 *)get_memory_at(cpu, &memory, 0x400004C))
+#define IO_BLDCNT       ((u16 *)get_memory_at(cpu, &memory, 0x4000050))
+#define IO_BLDALPHA     ((u16 *)get_memory_at(cpu, &memory, 0x4000052))
+#define IO_BLDY         ((u16 *)get_memory_at(cpu, &memory, 0x4000054))
+
+
 static void
 init_gba()
 {
@@ -174,6 +213,8 @@ init_gba()
     // SOUNDBIAS - Sound PWM Control
     // This register controls the final sound output. The default setting is 0200h
     *(u16 *)get_memory_at(cpu, &memory, 0x04000088) = 0x0200;
+
+    *IO_DISPCNT = 0x80;
 }
 
 /*
@@ -2542,16 +2583,19 @@ fetch()
 }
 
 
-// static void
-// run()
-// {
-//     // Emulating pipelining.
-//     while (is_running) {
-//         execute();
-//         decode();
-//         fetch();
-//     }
-// }
+static void
+run()
+{
+    // Emulating pipelining.
+    // while (is_running) {
+    //     execute();
+    //     decode();
+    //     fetch();
+    // }
+    execute();
+    decode();
+    fetch();
+}
 
 // Video
 #define SCREEN_WIDTH            (240)
@@ -2589,6 +2633,25 @@ static void AudioInputCallback(void *buffer, unsigned int frames)
     }
 }
 
+
+#define VIDEO_BUFFER_SIZE (WINDOW_WIDTH*WINDOW_HEIGHT)
+u32 *video_buffer;
+
+static void
+fill_video_buffer(u32 *buffer)
+{
+    if (*IO_DISPCNT == 0x80) {
+        for (int i = 0; i < VIDEO_BUFFER_SIZE; ++i) {
+            buffer[i] = (WHITE.r << 24) |
+                        (WHITE.g << 16) |
+                        (WHITE.b << 8) |
+                        (WHITE.a << 0);
+        }
+    }
+}
+
+u8 paused = 0;
+
 int main(int argc, char *argv[])
 {
     init_gba();
@@ -2604,30 +2667,34 @@ int main(int argc, char *argv[])
 
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, filename);
-    InitAudioDevice();
+    // InitAudioDevice();
 
     SetTargetFPS(FPS);
 
-    SetAudioStreamBufferSizeDefault(MAX_SAMPLES_PER_UPDATE);
+    // SetAudioStreamBufferSizeDefault(MAX_SAMPLES_PER_UPDATE);
 
     // Init raw audio stream (sample rate: 44100, sample size: 16bit-short, channels: 1-mono)
-    AudioStream stream = LoadAudioStream(SAMPLE_RATE, SAMPLE_SIZE, NUMBER_OF_CHANNELS);
+    // AudioStream stream = LoadAudioStream(SAMPLE_RATE, SAMPLE_SIZE, NUMBER_OF_CHANNELS);
 
-    SetAudioStreamCallback(stream, AudioInputCallback);
+    // SetAudioStreamCallback(stream, AudioInputCallback);
 
-    PlayAudioStream(stream);    // Start processing stream buffer (initialization of audio)
-    PauseAudioStream(stream);   //      but stop it immediately
+    // PlayAudioStream(stream);    // Start processing stream buffer (initialization of audio)
+    // PauseAudioStream(stream);   //      but stop it immediately
 
+
+    video_buffer = (u32 *)malloc(VIDEO_BUFFER_SIZE*sizeof(u32));
     // Main loop
     while (!WindowShouldClose()) {
-        if (!is_running) {
-            break;
+        if (IsKeyPressed(KEY_P)) {
+            paused = !paused;
         }
 
-        execute();
-        decode();
-        fetch();
+        if (!paused) {
+            run();
+        }
         
+        fill_video_buffer(video_buffer);
+
         // if (state->sound_timer > 0) {
         //     ResumeAudioStream(stream);
         // } else {
@@ -2639,7 +2706,14 @@ int main(int argc, char *argv[])
                 for (int j = 0; j < SCREEN_WIDTH; j++) {
                     int index = (i * SCREEN_WIDTH) + j;
                     // Color color = (state->screen[index] == 1) ? WHITE : BLACK;
-                    Color color = RED;
+                    // Color color = RED;
+                    u32 rgba = video_buffer[index];
+                    Color color = (Color) {
+                        .r = (rgba >> 24) & 0xFF,
+                        .g = (rgba >> 16) & 0xFF,
+                        .b = (rgba >> 8) & 0xFF,
+                        .a = (rgba >> 0) & 0xFF,
+                    };
                     float x = (float)j*SCALE;
                     float y = (float)i*SCALE;
                     float width = SCALE;
@@ -2649,18 +2723,22 @@ int main(int argc, char *argv[])
                     DrawRectangleRec(pixel, color);
                 }
             }
+
+            if (paused) {
+                DrawText("Paused", (int)(WINDOW_WIDTH*0.5), (int)(WINDOW_HEIGHT*0.5), 40, GREEN);
+            }
+
         EndDrawing();
     }
 
-    
-    // run();
-
+#ifdef _DEBUG
     print_cpu_state(cpu);
 
     printf("Exit OK\n");
+#endif
 
-    UnloadAudioStream(stream);   // Close raw audio stream and delete buffers from RAM
-    CloseAudioDevice();
+    // UnloadAudioStream(stream);   // Close raw audio stream and delete buffers from RAM
+    // CloseAudioDevice();
     CloseWindow();
 
     return 0;
