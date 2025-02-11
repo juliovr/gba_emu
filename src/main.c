@@ -1196,6 +1196,7 @@ process_data_processing()
 
         } else {
             // Shift immediate 5-bit value
+
             u8 shift_value = (shift >> 3) & 0b11111;
             // second_operand = apply_shift(*get_register(cpu, rm), shift_value, shift_type, &carry);
             
@@ -1594,24 +1595,61 @@ static void
 process_single_data_transfer()
 {
     u32 base = *get_register(cpu, decoded_instruction.rn);
-    u16 offset;
+    u32 offset = 0;
 
     if (decoded_instruction.I) {
+        // Offset is in register
+
         u8 carry;
-        u32 offset_register = *get_register(cpu, decoded_instruction.offset & 0xF);
+        u32 rm = *get_register(cpu, decoded_instruction.offset & 0xF);
         u8 shift = (decoded_instruction.offset >> 4) & 0xFF;
         u8 shift_type = (ShiftType)((shift >> 1) & 0b11);
         if (shift & 1) {
-            // Shift register
+            // From register
+            assert(!"The manual does not specify this as valid addressing mode. ARM Architecture Reference Manual, page A5-19");
+
             u8 rs = (shift >> 4) & 0xF ; // Register to the value to shift.
-            offset = (u16)apply_shift(offset_register, (u8)(*get_register(cpu, rs) & 0xF), shift_type, &carry);
+            offset = apply_shift(rm, (u8)(*get_register(cpu, rs) & 0xF), shift_type, &carry);
         } else {
-            // Shift amount
-            u8 shift_amount = (shift >> 3) & 0b11111;
-            offset = (u16)apply_shift(offset_register, shift_amount, shift_type, &carry);
+            // Shift immediate 5-bit value
+
+            u8 shift_value = (shift >> 3) & 0b11111;
+            // offset = (u16)apply_shift(offset_register, shift_amount, shift_type, &carry);
+            switch (shift_type) {
+                case SHIFT_TYPE_LOGICAL_LEFT: {
+                    offset = rm << shift_value;
+                } break;
+                case SHIFT_TYPE_LOGICAL_RIGHT: {
+                    if (shift_value == 0) {
+                        offset = 0;
+                    } else {
+                        offset = rm >> shift_value;
+                    }
+                } break;
+                case SHIFT_TYPE_ARITHMETIC_RIGHT: {
+                    if (shift_value == 0) {
+                        if (((rm >> 31) & 1) == 1) {
+                            offset = 0xFFFFFFFF;
+                        } else {
+                            offset = 0;
+                        }
+                    } else {
+                        offset = arithmetic_shift_right(rm, shift_value);
+                    }
+                } break;
+                case SHIFT_TYPE_ROTATE_RIGHT: {
+                    if (shift_value == 0) {
+                        offset = (CONDITION_C << 31) | (rm >> 1);
+                    } else {
+                        offset = rotate_right(rm, shift_value, 32);
+                    }
+                } break;
+            }
         }
 
     } else {
+        // Immediate value
+
         offset = (u16)decoded_instruction.offset;
     }
 
@@ -1872,20 +1910,20 @@ process_block_data_transfer()
                         u32 *address;
                         if (P) {
                             base_address += 4;
-                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            address = (u32 *)get_memory_at_without_exit(cpu, &memory, base_address);
                             
                             if (decoded_instruction.W) {
                                 *get_register(cpu, decoded_instruction.rn) = base_address;
                             }
                         } else {
-                            address = (u32 *)get_memory_at(cpu, &memory, base_address);
+                            address = (u32 *)get_memory_at_without_exit(cpu, &memory, base_address);
                             base_address += 4;
                             *get_register(cpu, decoded_instruction.rn) = base_address;
                         }
 
                         if (register_index == 15) {
                             assert(!"Check if I have to use the P flag (I think I do)");
-                            u32 value = *(u32 *)get_memory_at(cpu, &memory, base_address);
+                            u32 value = *(u32 *)get_memory_at_without_exit(cpu, &memory, base_address);
                             if (value != 0) {
                                 cpu->pc = value & 0xFFFFFFFC;
                                 current_instruction = 0;
@@ -1893,9 +1931,12 @@ process_block_data_transfer()
 
                             base_address += 4;
                         } else {
+                            u32 value = 0;
                             if (address != 0) {
-                                *get_register(cpu, (u8)register_index) = *address;
+                                value = *address;
                             }
+                            
+                            *get_register(cpu, (u8)register_index) = value;
                         }
                     }
 
@@ -2106,12 +2147,15 @@ execute()
     }
 
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
+    
+    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
+    
     if (!should_execute_instruction(decoded_instruction.condition)) {
-        // printf("Condition %d...Skipped\n", decoded_instruction.condition);
+        DEBUG_PRINT("... Skipped\n");
         goto exit_execute;
     }
 
-    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
+    DEBUG_PRINT("\n");
     
     InstructionCategory category = instruction_categories[decoded_instruction.type];
     switch (category) {
