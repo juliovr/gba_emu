@@ -2648,7 +2648,33 @@ fill_video_buffer(u32 *buffer)
                         (WHITE.a << 0);
         }
     }
+
+    
+    // Mode 0
+    if ((*IO_DISPCNT & 0b111) == 0) {
+        // DEBUG_PRINT("IO_BG0CNT = 0x%X\n", *IO_BG0CNT);
+        // DEBUG_PRINT("IO_BG1CNT = 0x%X\n", *IO_BG1CNT);
+        // DEBUG_PRINT("IO_BG2CNT = 0x%X\n", *IO_BG2CNT);
+        // DEBUG_PRINT("IO_BG3CNT = 0x%X\n", *IO_BG3CNT);
+    }
 }
+
+
+static int text_height = 30;
+static int text_drawn = 0;
+
+#ifdef _LINUX
+    #define DRAW_TEXT(format, ...) printf(format, ##__VA_ARGS__)
+#else
+    #define DRAW_TEXT(format, ...) \
+        do { \
+            char text[100]; \
+            snprintf(text, 100, format, __VA_ARGS__); \
+            DrawText(text, 10, text_drawn*text_height, text_height, GREEN); \
+            text_drawn++; \
+        } while (0)
+#endif
+
 
 u8 paused = 0;
 
@@ -2656,7 +2682,8 @@ int main(int argc, char *argv[])
 {
     init_gba();
     
-    char *filename = "Donkey Kong Country 2.gba";
+    // char *filename = "Donkey Kong Country 2.gba";
+    char *filename = "gba-plane.gba";
     int error = load_cartridge_into_memory(filename);
     if (error) {
         exit(1);
@@ -2664,7 +2691,7 @@ int main(int argc, char *argv[])
     
     // CartridgeHeader *header = (CartridgeHeader *)memory.game_pak_rom;
     // printf("fixed_value = 0x%X, expected = 0x96\n", header->fixed_value);
-
+    
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, filename);
     // InitAudioDevice();
@@ -2685,6 +2712,8 @@ int main(int argc, char *argv[])
     video_buffer = (u32 *)malloc(VIDEO_BUFFER_SIZE*sizeof(u32));
     // Main loop
     while (!WindowShouldClose()) {
+        text_drawn = 0;
+
         if (IsKeyPressed(KEY_P)) {
             paused = !paused;
         }
@@ -2727,6 +2756,17 @@ int main(int argc, char *argv[])
             if (paused) {
                 DrawText("Paused", (int)(WINDOW_WIDTH*0.5), (int)(WINDOW_HEIGHT*0.5), 40, GREEN);
             }
+
+
+
+
+
+#ifdef _DEBUG
+            DRAW_TEXT("IO_BG0CNT = 0x%X", *IO_BG0CNT);
+            DRAW_TEXT("IO_BG1CNT = 0x%X", *IO_BG1CNT);
+            DRAW_TEXT("IO_BG2CNT = 0x%X", *IO_BG2CNT);
+            DRAW_TEXT("IO_BG3CNT = 0x%X", *IO_BG3CNT);
+#endif
 
         EndDrawing();
     }
