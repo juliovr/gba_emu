@@ -202,6 +202,7 @@ init_gba()
     cpu->r13 = 0x03007F00;
     cpu->cpsr = 0x1F;
     cpu->pc = 0;
+    // cpu->pc = 0x08000000;
 
     load_bios_into_memory();
 
@@ -215,6 +216,10 @@ init_gba()
     *(u16 *)get_memory_at(cpu, &memory, 0x04000088) = 0x0200;
 
     *IO_DISPCNT = 0x80;
+    *IO_BG2PA = 0x0100;
+    *IO_BG2PD = 0x0100;
+    *IO_BG3PA = 0x0100;
+    *IO_BG3PD = 0x0100;
 }
 
 /*
@@ -2191,15 +2196,13 @@ execute()
 
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
     
-    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
+    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
     
     if (!should_execute_instruction(decoded_instruction.condition)) {
-        DEBUG_PRINT("... Skipped\n");
+        DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d... Skipped\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
         goto exit_execute;
     }
 
-    DEBUG_PRINT("\n");
-    
     InstructionCategory category = instruction_categories[decoded_instruction.type];
     switch (category) {
         case INSTRUCTION_CATEGORY_BRANCH: {
@@ -2634,47 +2637,55 @@ static void AudioInputCallback(void *buffer, unsigned int frames)
 }
 
 
-#define VIDEO_BUFFER_SIZE (WINDOW_WIDTH*WINDOW_HEIGHT)
-u32 *video_buffer;
-
-static void
-fill_video_buffer(u32 *buffer)
-{
-    if (*IO_DISPCNT == 0x80) {
-        for (int i = 0; i < VIDEO_BUFFER_SIZE; ++i) {
-            buffer[i] = (WHITE.r << 24) |
-                        (WHITE.g << 16) |
-                        (WHITE.b << 8) |
-                        (WHITE.a << 0);
-        }
-    }
-
-    
-    // Mode 0
-    if ((*IO_DISPCNT & 0b111) == 0) {
-        // DEBUG_PRINT("IO_BG0CNT = 0x%X\n", *IO_BG0CNT);
-        // DEBUG_PRINT("IO_BG1CNT = 0x%X\n", *IO_BG1CNT);
-        // DEBUG_PRINT("IO_BG2CNT = 0x%X\n", *IO_BG2CNT);
-        // DEBUG_PRINT("IO_BG3CNT = 0x%X\n", *IO_BG3CNT);
-    }
-}
-
-
 static int text_height = 30;
 static int text_drawn = 0;
 
-#ifdef _LINUX
-    #define DRAW_TEXT(format, ...) printf(format, ##__VA_ARGS__)
+#ifdef _DEBUG
+    #ifdef _LINUX
+        #define DRAW_TEXT(format, ...)                                          \
+            do {                                                                \
+                char text[100];                                                 \
+                snprintf(text, 100, format, ##__VA_ARGS__);                     \
+                DrawText(text, 10, text_drawn*text_height, text_height, GREEN); \
+                text_drawn++;                                                   \
+            } while (0)
+    #else
+        #define DRAW_TEXT(format, ...)                                          \
+            do {                                                                \
+                char text[100];                                                 \
+                snprintf(text, 100, format, __VA_ARGS__);                       \
+                DrawText(text, 10, text_drawn*text_height, text_height, GREEN); \
+                text_drawn++;                                                   \
+            } while (0)
+    #endif
 #else
-    #define DRAW_TEXT(format, ...) \
-        do { \
-            char text[100]; \
-            snprintf(text, 100, format, __VA_ARGS__); \
-            DrawText(text, 10, text_drawn*text_height, text_height, GREEN); \
-            text_drawn++; \
-        } while (0)
+    #define DRAW_TEXT(...)
 #endif
 
+
+// #define VIDEO_BUFFER_SIZE (WINDOW_WIDTH*WINDOW_HEIGHT)
+// u32 *video_buffer;
+
+// static void
+// fill_video_buffer(u32 *buffer)
+// {
+//     // if (*IO_DISPCNT == 0x80) {
+//     //     for (int i = 0; i < VIDEO_BUFFER_SIZE; ++i) {
+//     //         buffer[i] = (WHITE.r << 24) |
+//     //                     (WHITE.g << 16) |
+//     //                     (WHITE.b << 8) |
+//     //                     (WHITE.a << 0);
+//     //     }
+//     // }
+
+    
+//     // Mode 3
+//     if ((*IO_DISPCNT & 0b111) == 3) {
+//         DRAW_TEXT("Mode 3");
+//     }
+// }
+
+#define CPU_CYCLES_PER_FRAME (280896)
 
 u8 paused = 0;
 
@@ -2691,7 +2702,7 @@ int main(int argc, char *argv[])
     
     // CartridgeHeader *header = (CartridgeHeader *)memory.game_pak_rom;
     // printf("fixed_value = 0x%X, expected = 0x96\n", header->fixed_value);
-    
+
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, filename);
     // InitAudioDevice();
@@ -2709,9 +2720,11 @@ int main(int argc, char *argv[])
     // PauseAudioStream(stream);   //      but stop it immediately
 
 
-    video_buffer = (u32 *)malloc(VIDEO_BUFFER_SIZE*sizeof(u32));
     // Main loop
+#if 1
+    // video_buffer = (u32 *)malloc(VIDEO_BUFFER_SIZE*sizeof(u32));
     while (!WindowShouldClose()) {
+#ifdef _DEBUG
         text_drawn = 0;
 
         if (IsKeyPressed(KEY_P)) {
@@ -2721,8 +2734,11 @@ int main(int argc, char *argv[])
         if (!paused) {
             run();
         }
+#else
+        run();
+#endif
         
-        fill_video_buffer(video_buffer);
+        // fill_video_buffer(video_buffer);
 
         // if (state->sound_timer > 0) {
         //     ResumeAudioStream(stream);
@@ -2735,14 +2751,14 @@ int main(int argc, char *argv[])
                 for (int j = 0; j < SCREEN_WIDTH; j++) {
                     int index = (i * SCREEN_WIDTH) + j;
                     // Color color = (state->screen[index] == 1) ? WHITE : BLACK;
-                    // Color color = RED;
-                    u32 rgba = video_buffer[index];
-                    Color color = (Color) {
-                        .r = (rgba >> 24) & 0xFF,
-                        .g = (rgba >> 16) & 0xFF,
-                        .b = (rgba >> 8) & 0xFF,
-                        .a = (rgba >> 0) & 0xFF,
-                    };
+                    // u32 rgba = video_buffer[index];
+                    // Color color = (Color) {
+                        //     .r = (rgba >> 24) & 0xFF,
+                        //     .g = (rgba >> 16) & 0xFF,
+                        //     .b = (rgba >> 8) & 0xFF,
+                        //     .a = (rgba >> 0) & 0xFF,
+                        // };
+                    Color color = WHITE;
                     float x = (float)j*SCALE;
                     float y = (float)i*SCALE;
                     float width = SCALE;
@@ -2758,18 +2774,18 @@ int main(int argc, char *argv[])
             }
 
 
-
-
-
-#ifdef _DEBUG
             DRAW_TEXT("IO_BG0CNT = 0x%X", *IO_BG0CNT);
             DRAW_TEXT("IO_BG1CNT = 0x%X", *IO_BG1CNT);
             DRAW_TEXT("IO_BG2CNT = 0x%X", *IO_BG2CNT);
             DRAW_TEXT("IO_BG3CNT = 0x%X", *IO_BG3CNT);
-#endif
 
         EndDrawing();
     }
+#else
+    while (1) {
+        run();
+    }
+#endif
 
 #ifdef _DEBUG
     print_cpu_state(cpu);
