@@ -23,7 +23,6 @@ CPU *cpu = &gba_cpu;
 
 GBAMemory memory = {0};
 
-u32 counter = 0;
 
 //
 // Control Bits
@@ -343,7 +342,7 @@ thumb_execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_thumb_execute;
     
-    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
+    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, cycles = %lld\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, cpu->cycles);
 
 
     switch (decoded_instruction.type) {
@@ -400,6 +399,8 @@ thumb_execute()
                     set_condition_N((*rd >> 31) & 1);
                 } break;
             }
+
+            cpu->cycles++;
         } break;
         case INSTRUCTION_ADD_SUBTRACT: {
             u32 first_value = *get_register(cpu, decoded_instruction.rs);
@@ -424,6 +425,8 @@ thumb_execute()
             
             set_condition_Z(result == 0);
             set_condition_N((result >> 31) & 1);
+
+            cpu->cycles++;
         } break;
         case INSTRUCTION_MOVE_COMPARE_ADD_SUBTRACT_IMMEDIATE: {
             u32 result = 0;
@@ -460,6 +463,8 @@ thumb_execute()
 
             set_condition_Z(result == 0);
             set_condition_N((result >> 31) & 1);
+
+            cpu->cycles++;
         } break;
         case INSTRUCTION_ALU_OPERATIONS: {
             u32 *rd = get_register(cpu, decoded_instruction.rd);
@@ -472,10 +477,12 @@ thumb_execute()
                 case 0: { // AND
                     result = *rd & *rs;
                     store_result = true;
+                    cpu->cycles++;
                 } break;
                 case 1: { // EOR
                     result = *rd ^ *rs;
                     store_result = true;
+                    cpu->cycles++;
                 } break;
                 case 2: { // LSL
                     u8 rs_value = (u8)*rs;
@@ -494,6 +501,7 @@ thumb_execute()
                         result = 0;
                         store_result = true;
                     }
+                    cpu->cycles += 2;
                 } break;
                 case 3: { // LSR
                     u8 rs_value = (u8)*rs;
@@ -512,6 +520,7 @@ thumb_execute()
                         result = 0;
                         store_result = true;
                     }
+                    cpu->cycles += 2;
                 } break;
                 case 4: { // ASR
                     u8 rs_value = (u8)*rs;
@@ -536,6 +545,7 @@ thumb_execute()
 
                         store_result = true;
                     }
+                    cpu->cycles += 2;
                 } break;
                 case 5: { // ADC
                     result = (*rd + *rs + CONDITION_C);
@@ -543,6 +553,7 @@ thumb_execute()
 
                     set_condition_C((result < *rd) ? 1 : 0); // TODO: check
                     set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    cpu->cycles++;
                 } break;
                 case 6: { // SBC
                     result = (*rd - *rs - ~(CONDITION_C));
@@ -550,6 +561,7 @@ thumb_execute()
 
                     set_condition_C((result <= *rd) ? 1 : 0);
                     set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    cpu->cycles++;
                 } break;
                 case 7: { // ROR
                     u8 rs_value = (u8)*rs;
@@ -568,10 +580,12 @@ thumb_execute()
                         result = (*rd >> shift) | rotate_masked;
                         store_result = true;
                     }
+                    cpu->cycles += 2;
                 } break;
                 case 8: { // TST
                     result = *rd & *rs;
                     store_result = false;
+                    cpu->cycles++;
                 } break;
                 case 9: { // NEG
                     result = 0 - *rs;
@@ -579,6 +593,7 @@ thumb_execute()
 
                     set_condition_C((result <= *rd) ? 1 : 0);
                     set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    cpu->cycles++;
                 } break;
                 case 10: { // CMP
                     result = *rd - *rs;
@@ -586,6 +601,7 @@ thumb_execute()
 
                     set_condition_C((result <= *rd) ? 1 : 0);
                     set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    cpu->cycles++;
                 } break;
                 case 11: { // CMN
                     result = *rd + *rs;
@@ -593,22 +609,27 @@ thumb_execute()
 
                     set_condition_C((result <= *rd) ? 1 : 0);
                     set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    cpu->cycles++;
                 } break;
                 case 12: { // ORR
                     result = *rd | *rs;
                     store_result = true;
+                    cpu->cycles++;
                 } break;
                 case 13: { // MUL
                     result = (u32)(*rd * *rs);
                     store_result = true;
+                    cpu->cycles += 2;
                 } break;
                 case 14: { // BIC
                     result = *rd & ~*rs;
                     store_result = true;
+                    cpu->cycles++;
                 } break;
                 case 15: { // MVN
                     result = ~*rs;
                     store_result = true;
+                    cpu->cycles++;
                 } break;
             }
 
@@ -644,12 +665,9 @@ thumb_execute()
                 case 0: { // ADD
                     result = *rd + *rs;
                     
-                    // set_condition_C((result < *rs) ? 1 : 0);
-                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
-                    // set_condition_Z(result == 0);
-                    // set_condition_N((result >> 31) & 1);
-                    
                     *rd = result;
+
+                    cpu->cycles++;
                 } break;
                 case 1: { // CMP
                     result = *rd - *rs;
@@ -658,11 +676,15 @@ thumb_execute()
                     set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     set_condition_Z(result == 0);
                     set_condition_N((result >> 31) & 1);
+                    
+                    cpu->cycles++;
                 } break;
                 case 2: { // MOV
                     result = *rs;
                     
                     *rd = result;
+                    
+                    cpu->cycles++;
                 } break;
                 case 3: { // BX
                     cpu->pc = *rs & (-2);
@@ -670,6 +692,8 @@ thumb_execute()
 
                     u8 thumb_mode = *rs & 1;
                     set_control_bit_T(thumb_mode);
+                    
+                    cpu->cycles += 3;
                 } break;
             }
         } break;
@@ -679,6 +703,8 @@ thumb_execute()
             u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
 
             *get_register(cpu, decoded_instruction.rd) = *address;
+
+            cpu->cycles += 3;
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_REGISTER_OFFSET: {
             u32 base = *get_register(cpu, decoded_instruction.rb) + *get_register(cpu, decoded_instruction.rm);
@@ -705,6 +731,12 @@ thumb_execute()
                     }
                 }
             }
+
+            if (decoded_instruction.L) {
+                cpu->cycles += 3;
+            } else {
+                cpu->cycles += 2;
+            }
         } break;
         case INSTRUCTION_LOAD_STORE_SIGN_EXTENDED_BYTE_HALFWORD: {
             u32 base = *get_register(cpu, decoded_instruction.rb) + *get_register(cpu, decoded_instruction.rm);
@@ -720,23 +752,30 @@ thumb_execute()
                 assert((base & 1) == 0);
                 u16 *address = (u16 *)get_memory_at_without_exit(cpu, &memory, base);
                 if (address != 0) *address = (u16)*rd;
+
+                cpu->cycles += 2;
             } else if (S == 0 && H == 1) { // LDRH
                 assert((base & 1) == 0);
                 u16 *address = (u16 *)get_memory_at_without_exit(cpu, &memory, base);
                 if (address != 0) *rd = *address;
+
+                cpu->cycles += 3;
             } else if (S == 1 && H == 0) { // LDRSB
                 u8 *address = get_memory_at_without_exit(cpu, &memory, base);
                 if (address != 0) *rd = sign_extend(*address, 8);
+                
+                cpu->cycles += 3;
             } else { // LDRSH
                 assert((base & 1) == 0);
                 u16 *address = (u16 *)get_memory_at_without_exit(cpu, &memory, base);
                 if (address != 0) *rd = sign_extend(*address, 16);
+                
+                cpu->cycles += 3;
             }
         } break;
         case INSTRUCTION_LOAD_STORE_WITH_IMMEDIATE_OFFSET: {
             if (decoded_instruction.B) {
                 u32 base = *get_register(cpu, decoded_instruction.rb) + (decoded_instruction.offset); // For Byte quantity does not multiply the offset.
-                // u8 *address = get_memory_at(cpu, &memory, base);
                 u8 *address = get_memory_at_without_exit(cpu, &memory, base);
                 if (address != 0) {
                     if (decoded_instruction.L) { // LDRB
@@ -758,6 +797,11 @@ thumb_execute()
                 }
             }
 
+            if (decoded_instruction.L) {
+                cpu->cycles += 3;
+            } else {
+                cpu->cycles += 2;
+            }
         } break;
         case INSTRUCTION_LOAD_STORE_HALFWORD: {
             u32 base = *get_register(cpu, decoded_instruction.rb) + (decoded_instruction.offset << 1);
@@ -765,8 +809,12 @@ thumb_execute()
             u16 *address = (u16 *)get_memory_at(cpu, &memory, base);
             if (decoded_instruction.L) { // LDRH
                 *get_register(cpu, decoded_instruction.rd) = (u32)*address; // Cast to u32 to fill high bits with 0.
+                
+                cpu->cycles += 3;
             } else { // STRH
                 *address = (u16)*get_register(cpu, decoded_instruction.rd);
+                
+                cpu->cycles += 2;
             }
         } break;
         case INSTRUCTION_SP_RELATIVE_LOAD_STORE: {
@@ -776,8 +824,12 @@ thumb_execute()
             u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
             if (decoded_instruction.L) { // LDR
                 *get_register(cpu, decoded_instruction.rd) = *address;
+                
+                cpu->cycles += 3;
             } else { // STR
                 *address = *get_register(cpu, decoded_instruction.rd);
+                
+                cpu->cycles += 2;
             }
         } break;
         case INSTRUCTION_LOAD_ADDRESS: {
@@ -789,12 +841,16 @@ thumb_execute()
                 // PC
                 *get_register(cpu, decoded_instruction.rd) = (cpu->pc & 0xFFFFFFFC) + (decoded_instruction.value_8 << 2);
             }
+
+            cpu->cycles++;
         } break;
         case INSTRUCTION_ADD_OFFSET_TO_STACK_POINTER: {
             s8 sign = decoded_instruction.S ? -1 : 1;
             int offset = sign * (decoded_instruction.offset << 2);
 
             cpu->sp += offset;
+
+            cpu->cycles++;
         } break;
         case INSTRUCTION_PUSH_POP_REGISTERS: {
             u8 register_list = (u8)decoded_instruction.register_list;
@@ -802,11 +858,14 @@ thumb_execute()
 
             u32 sp = cpu->sp;
             
+            u8 registers_set = 0;
             if (decoded_instruction.L) { // POP
                 int register_index = 0;
                 while (register_list) {
                     int register_index_set = register_list & 1;
                     if (register_index_set) {
+                        registers_set++;
+
                         u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
                         *get_register(cpu, (u8)register_index) = *address;
 
@@ -818,6 +877,8 @@ thumb_execute()
                 }
 
                 if (decoded_instruction.R) {
+                    registers_set += 2;
+
                     u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
                     cpu->pc = *address & 0xFFFFFFFE;
                     current_instruction = 0;
@@ -826,10 +887,14 @@ thumb_execute()
                 }
                 
                 cpu->sp = sp;
+
+                cpu->cycles += registers_set + 2;
             } else { // PUSH
                 // Instead of going from the bottom I'm going to insert the values in reverse order.
                 int register_index = 7;
                 if (decoded_instruction.R) {
+                    registers_set++;
+
                     sp -= 4;
 
                     u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
@@ -839,6 +904,8 @@ thumb_execute()
                 while (register_list) {
                     int register_index_set = (register_list >> 7) & 1;
                     if (register_index_set) {
+                        registers_set++;
+
                         sp -= 4;
                         
                         u32 *address = (u32 *)get_memory_at(cpu, &memory, sp);
@@ -850,18 +917,25 @@ thumb_execute()
                 }
 
                 cpu->sp = sp;
+
+                cpu->cycles += registers_set + 1;
             }
         } break;
         case INSTRUCTION_MULTIPLE_LOAD_STORE: {
+            u8 fixed_cycles = (decoded_instruction.L) ? 2 : 1;
+
             u32 *rb = get_register(cpu, decoded_instruction.rb);
             u32 base = *rb;
             u16 register_list = decoded_instruction.register_list;
             assert(register_list != 0);
 
             int register_index = 0;
+            u8 registers_set = 0;
             while (register_list) {
                 int register_index_set = register_list & 1;
                 if (register_index_set) {
+                    registers_set++;
+
                     u32 *address = (u32 *)get_memory_at(cpu, &memory, base);
 
                     if (decoded_instruction.L) {
@@ -880,6 +954,8 @@ thumb_execute()
             }
 
             *rb = base;
+
+            cpu->cycles += registers_set + fixed_cycles;
         } break;
         case INSTRUCTION_CONDITIONAL_BRANCH: {
             Condition condition = (Condition)decoded_instruction.condition;
@@ -889,6 +965,10 @@ thumb_execute()
                 u32 offset = left_shift_sign_extended(decoded_instruction.offset, 8, 1);
                 cpu->pc += offset;
                 current_instruction = 0;
+
+                cpu->cycles += 3;
+            } else {
+                cpu->cycles++;
             }
         } break;
         case INSTRUCTION_SOFTWARE_INTERRUPT: {
@@ -901,11 +981,15 @@ thumb_execute()
 
             cpu->pc = 0x8;
             current_instruction = 0;
+
+            cpu->cycles += 3;
         } break;
         case INSTRUCTION_UNCONDITIONAL_BRANCH: {
             u32 offset = left_shift_sign_extended(decoded_instruction.offset, 11, 1);
             cpu->pc += offset;
             current_instruction = 0;
+
+            cpu->cycles += 3;
         } break;
         case INSTRUCTION_LONG_BRANCH_WITH_LINK: {
             if (decoded_instruction.H == 0) {
@@ -913,12 +997,15 @@ thumb_execute()
                 u32 offset = left_shift_sign_extended(decoded_instruction.offset, 11, 12);
                 cpu->lr = cpu->pc + offset;
 
+                cpu->cycles++;
             } else {
                 // Second part of the instruction
                 cpu->pc = cpu->lr + ((u32)decoded_instruction.offset << 1);
                 cpu->lr = (decoded_instruction.address + 2) | 1; // NOTE: the address of the instruction following the BL is placed in LR and bit 0 of LR is set.
                 
                 current_instruction = 0;
+
+                cpu->cycles += 3;
             }
 
         } break;
@@ -1105,7 +1192,6 @@ thumb_swi:
 
 #ifdef _DEBUG
     decoded_instruction.encoding = current_instruction;
-    decoded_instruction.index = counter++;
 #endif
 }
 
@@ -1131,6 +1217,8 @@ process_branch()
             cpu->pc += offset;
 
             current_instruction = 0;
+
+            cpu->cycles += 3;
         } break;
 
         case INSTRUCTION_BX: {
@@ -1139,6 +1227,8 @@ process_branch()
 
             u8 thumb_mode = *get_register(cpu, decoded_instruction.rn) & 1;
             set_control_bit_T(thumb_mode);
+
+            cpu->cycles += 3;
         } break;
 
         default: {
@@ -1150,6 +1240,8 @@ process_branch()
 static void
 process_data_processing()
 {
+    u8 extra_cpu_cycles = 0;
+
     u8 carry = 0;
     u32 second_operand = 0;
     if (decoded_instruction.I) {
@@ -1160,7 +1252,6 @@ process_data_processing()
         // NOTE: This value is zero extended to 32 bits, and then subject to a rotate right by twice the value in the rotate field.
         rotate *= 2;
 
-        // second_operand = apply_shift(imm, rotate, shift_type, &carry);
         second_operand = rotate_right(imm, rotate, 32);
         if (rotate == 0) {
             carry = CONDITION_C;
@@ -1176,10 +1267,11 @@ process_data_processing()
         ShiftType shift_type = (ShiftType)((shift >> 1) & 0b11);
         if (shift & 1) {
             // Shift register
+            extra_cpu_cycles++;
+
             u8 rs = (shift >> 4) & 0xF; // Register to the value to shift.
             u8 shift_value = (u8)(*get_register(cpu, rs));
-            // second_operand = apply_shift(rm, shift_value, shift_type, &carry);
-
+            
             switch (shift_type) {
                 case SHIFT_TYPE_LOGICAL_LEFT: {
                     if (shift_value == 0) {
@@ -1246,7 +1338,6 @@ process_data_processing()
             // Shift immediate 5-bit value
 
             u8 shift_value = (shift >> 3) & 0b11111;
-            // second_operand = apply_shift(*get_register(cpu, rm), shift_value, shift_type, &carry);
             
             switch (shift_type) {
                 case SHIFT_TYPE_LOGICAL_LEFT: {
@@ -1511,7 +1602,16 @@ process_data_processing()
 
     if (store_result) {
         *rd = result;
+
+        if (decoded_instruction.rd == 15) {
+            assert(!"OK");
+            current_instruction = 0;
+            
+            extra_cpu_cycles += 2;
+        }
     }
+
+    cpu->cycles += 1 + extra_cpu_cycles;
 }
 
 static void
@@ -1605,6 +1705,8 @@ process_psr_transfer()
             assert(!"Invalid instruction type for category");
         }
     }
+
+    cpu->cycles++;
 }
 
 static void
@@ -1747,10 +1849,14 @@ process_single_data_transfer()
 
                     // PC written, so it has to branch to that instruction and invalidate whatever the pre-fetched was.
                     current_instruction = 0;
+
+                    cpu->cycles += 2; // 2 Extra cycles on LDR PC
                 } else {
                     *rd = value;
                 }
             }
+            
+            cpu->cycles += 3;
         } break;
         case INSTRUCTION_STR: {
             if (B) {
@@ -1787,6 +1893,8 @@ process_single_data_transfer()
                 *address = *rd;
             }
 
+            cpu->cycles += 2;
+
         } break;
 
         default: {
@@ -1800,6 +1908,8 @@ process_halfword_and_signed_data_transfer()
 {
     switch (decoded_instruction.type) {
         case INSTRUCTION_LDRH: {
+            assert(decoded_instruction.rd != 15);
+
             u32 base = *get_register(cpu, decoded_instruction.rn);
             u32 offset;
             if (decoded_instruction.I) {
@@ -1824,6 +1934,8 @@ process_halfword_and_signed_data_transfer()
                 UPDATE_BASE_OFFSET();
                 *get_register(cpu, decoded_instruction.rn) = base;
             }
+
+            cpu->cycles += 3;
 
         } break;
         case INSTRUCTION_STRH: {
@@ -1851,9 +1963,13 @@ process_halfword_and_signed_data_transfer()
                 UPDATE_BASE_OFFSET();
                 *get_register(cpu, decoded_instruction.rn) = base;
             }
+            
+            cpu->cycles += 2;
 
         } break;
         case INSTRUCTION_LDRSB: {
+            assert(decoded_instruction.rd != 15);
+            
             u32 base = *get_register(cpu, decoded_instruction.rn);
             u32 offset;
             if (decoded_instruction.I) {
@@ -1887,9 +2003,13 @@ process_halfword_and_signed_data_transfer()
                 UPDATE_BASE_OFFSET();
                 *get_register(cpu, decoded_instruction.rn) = base;
             }
+
+            cpu->cycles += 3;
 
         } break;
         case INSTRUCTION_LDRSH: {
+            assert(decoded_instruction.rd != 15);
+            
             u32 base = *get_register(cpu, decoded_instruction.rn);
             u32 offset;
             if (decoded_instruction.I) {
@@ -1923,6 +2043,8 @@ process_halfword_and_signed_data_transfer()
                 UPDATE_BASE_OFFSET();
                 *get_register(cpu, decoded_instruction.rn) = base;
             }
+
+            cpu->cycles += 3;
 
         } break;
 
@@ -1950,11 +2072,14 @@ process_block_data_transfer()
             assert(register_list != 0);
 
             int register_index = (decoded_instruction.U) ? 0 : 15;
+            u8 registers_set = 0;
             while (register_list) {
                 if (decoded_instruction.U) {
                     // Increment
                     int register_index_set = register_list & 1;
                     if (register_index_set) {
+                        registers_set++;
+
                         u32 *address;
                         if (P) {
                             base_address += 4;
@@ -1978,6 +2103,8 @@ process_block_data_transfer()
                             }
 
                             base_address += 4;
+
+                            assert("Add cpu cycles");
                         } else {
                             u32 value = 0;
                             if (address != 0) {
@@ -1993,6 +2120,7 @@ process_block_data_transfer()
                 } else {
                     // Decrement
                     assert(!"Implemented checking the manual, but when reach this point, let's re-check the implementation (just in case)");
+                    assert(!"Add cpu cycles");
                     int register_index_set = (register_list >> 15) & 1;
                     if (register_index_set) {
                         u32 *address;
@@ -2026,6 +2154,8 @@ process_block_data_transfer()
 
             }
 
+            cpu->cycles += registers_set + 2;
+
         } break;
 
         case INSTRUCTION_STM: {
@@ -2036,11 +2166,15 @@ process_block_data_transfer()
             u8 P = decoded_instruction.P;
 
             int register_index = (decoded_instruction.U) ? 0 : 15;
+            u8 registers_set = 0;
+
             while (register_list) {
                 if (decoded_instruction.U) {
                     // Increment
                     int register_index_set = register_list & 1;
                     if (register_index_set) {
+                        registers_set++;
+
                         u32 *address;
                         if (P) {
                             base_address += 4;
@@ -2064,6 +2198,8 @@ process_block_data_transfer()
                     // Decrement
                     int register_index_set = (register_list >> 15) & 1;
                     if (register_index_set) {
+                        registers_set++;
+
                         u32 *address;
                         if (P) {
                             base_address -= 4;
@@ -2085,6 +2221,8 @@ process_block_data_transfer()
                     register_list <<= 1;
                 }
             }
+            
+            cpu->cycles += registers_set + 1;
             
         } break;
 
@@ -2115,6 +2253,8 @@ process_single_data_swap()
                 *address = *rm;
                 *rd = temp;
             }
+
+            cpu->cycles += 4;
         } break;
 
         default: {
@@ -2195,13 +2335,14 @@ execute()
     }
 
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
-    
-    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
-    
     if (!should_execute_instruction(decoded_instruction.condition)) {
-        DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, index = %d... Skipped\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, decoded_instruction.index);
+        DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, cycles = %lld... Skipped\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, cpu->cycles);
+        cpu->cycles++;
+        
         goto exit_execute;
     }
+    
+    DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, cycles = %lld\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, cpu->cycles);
 
     InstructionCategory category = instruction_categories[decoded_instruction.type];
     switch (category) {
@@ -2568,7 +2709,6 @@ data_processing:
 
 #ifdef _DEBUG
     decoded_instruction.encoding = current_instruction;
-    decoded_instruction.index = counter++;
 #endif
 
     current_instruction = 0;
@@ -2586,6 +2726,14 @@ fetch()
 }
 
 
+
+static u8 paused = 0;
+
+
+#define CPU_CYCLES_PER_FRAME (280896)
+
+static u32 current_frame = 0;
+
 static void
 run()
 {
@@ -2595,9 +2743,14 @@ run()
     //     decode();
     //     fetch();
     // }
-    execute();
-    decode();
-    fetch();
+
+    while (cpu->cycles / CPU_CYCLES_PER_FRAME <= current_frame) {
+        execute();
+        decode();
+        fetch();
+    }
+    
+    current_frame++;
 }
 
 // Video
@@ -2607,7 +2760,6 @@ run()
 #define SCALE                   (10)    /* Pixel scale */
 #define WINDOW_WIDTH            (SCREEN_WIDTH*SCALE)
 #define WINDOW_HEIGHT           (SCREEN_HEIGHT*SCALE)
-#define FPS                     (60)
 
 // Audio
 #define MAX_SAMPLES             512
@@ -2640,27 +2792,27 @@ static void AudioInputCallback(void *buffer, unsigned int frames)
 static int text_height = 30;
 static int text_drawn = 0;
 
-#ifdef _DEBUG
-    #ifdef _LINUX
-        #define DRAW_TEXT(format, ...)                                          \
-            do {                                                                \
-                char text[100];                                                 \
-                snprintf(text, 100, format, ##__VA_ARGS__);                     \
-                DrawText(text, 10, text_drawn*text_height, text_height, GREEN); \
-                text_drawn++;                                                   \
-            } while (0)
-    #else
-        #define DRAW_TEXT(format, ...)                                          \
-            do {                                                                \
-                char text[100];                                                 \
-                snprintf(text, 100, format, __VA_ARGS__);                       \
-                DrawText(text, 10, text_drawn*text_height, text_height, GREEN); \
-                text_drawn++;                                                   \
-            } while (0)
-    #endif
+// #ifdef _DEBUG
+#ifdef _LINUX
+    #define DRAW_TEXT(format, ...)                                          \
+        do {                                                                \
+            char text[100];                                                 \
+            snprintf(text, 100, format, ##__VA_ARGS__);                     \
+            DrawText(text, 10, text_drawn*text_height, text_height, GREEN); \
+            text_drawn++;                                                   \
+        } while (0)
 #else
-    #define DRAW_TEXT(...)
+    #define DRAW_TEXT(format, ...)                                          \
+        do {                                                                \
+            char text[100];                                                 \
+            snprintf(text, 100, format, __VA_ARGS__);                       \
+            DrawText(text, 10, text_drawn*text_height, text_height, GREEN); \
+            text_drawn++;                                                   \
+        } while (0)
 #endif
+// #else
+//     #define DRAW_TEXT(...)
+// #endif
 
 
 // #define VIDEO_BUFFER_SIZE (WINDOW_WIDTH*WINDOW_HEIGHT)
@@ -2685,9 +2837,7 @@ static int text_drawn = 0;
 //     }
 // }
 
-#define CPU_CYCLES_PER_FRAME (280896)
 
-u8 paused = 0;
 
 int main(int argc, char *argv[])
 {
@@ -2705,26 +2855,11 @@ int main(int argc, char *argv[])
 
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, filename);
-    // InitAudioDevice();
-
-    SetTargetFPS(FPS);
-
-    // SetAudioStreamBufferSizeDefault(MAX_SAMPLES_PER_UPDATE);
-
-    // Init raw audio stream (sample rate: 44100, sample size: 16bit-short, channels: 1-mono)
-    // AudioStream stream = LoadAudioStream(SAMPLE_RATE, SAMPLE_SIZE, NUMBER_OF_CHANNELS);
-
-    // SetAudioStreamCallback(stream, AudioInputCallback);
-
-    // PlayAudioStream(stream);    // Start processing stream buffer (initialization of audio)
-    // PauseAudioStream(stream);   //      but stop it immediately
+    // SetTargetFPS(60);
 
 
     // Main loop
-#if 1
-    // video_buffer = (u32 *)malloc(VIDEO_BUFFER_SIZE*sizeof(u32));
     while (!WindowShouldClose()) {
-#ifdef _DEBUG
         text_drawn = 0;
 
         if (IsKeyPressed(KEY_P)) {
@@ -2734,18 +2869,20 @@ int main(int argc, char *argv[])
         if (!paused) {
             run();
         }
-#else
-        run();
-#endif
         
-        // fill_video_buffer(video_buffer);
-
-        // if (state->sound_timer > 0) {
-        //     ResumeAudioStream(stream);
-        // } else {
-        //     PauseAudioStream(stream);
+        // if (cpu->cycles / CPU_CYCLES_PER_FRAME > current_frame) {
+        //     current_frame++;
+            
+        //     //
+        //     // Draw frame to buffer
+        //     //
+        //     // fill_video_buffer(video_buffer);
+            
         // }
 
+        //
+        // Draw buffer
+        //
         BeginDrawing();
             for (int i = 0; i < SCREEN_HEIGHT; i++) {
                 for (int j = 0; j < SCREEN_WIDTH; j++) {
@@ -2753,11 +2890,11 @@ int main(int argc, char *argv[])
                     // Color color = (state->screen[index] == 1) ? WHITE : BLACK;
                     // u32 rgba = video_buffer[index];
                     // Color color = (Color) {
-                        //     .r = (rgba >> 24) & 0xFF,
-                        //     .g = (rgba >> 16) & 0xFF,
-                        //     .b = (rgba >> 8) & 0xFF,
-                        //     .a = (rgba >> 0) & 0xFF,
-                        // };
+                    //     .r = (rgba >> 24) & 0xFF,
+                    //     .g = (rgba >> 16) & 0xFF,
+                    //     .b = (rgba >> 8) & 0xFF,
+                    //     .a = (rgba >> 0) & 0xFF,
+                    // };
                     Color color = WHITE;
                     float x = (float)j*SCALE;
                     float y = (float)i*SCALE;
@@ -2773,19 +2910,19 @@ int main(int argc, char *argv[])
                 DrawText("Paused", (int)(WINDOW_WIDTH*0.5), (int)(WINDOW_HEIGHT*0.5), 40, GREEN);
             }
 
+            DRAW_TEXT("Cycles = %lld", cpu->cycles);
+            DRAW_TEXT("Frame = %d", current_frame);
+            DRAW_TEXT("GetFPS() = %d", GetFPS());
 
+            DRAW_TEXT("IO_DISPCNT = 0x%X", *IO_DISPCNT);
             DRAW_TEXT("IO_BG0CNT = 0x%X", *IO_BG0CNT);
             DRAW_TEXT("IO_BG1CNT = 0x%X", *IO_BG1CNT);
             DRAW_TEXT("IO_BG2CNT = 0x%X", *IO_BG2CNT);
             DRAW_TEXT("IO_BG3CNT = 0x%X", *IO_BG3CNT);
 
         EndDrawing();
+
     }
-#else
-    while (1) {
-        run();
-    }
-#endif
 
 #ifdef _DEBUG
     print_cpu_state(cpu);
@@ -2793,8 +2930,6 @@ int main(int argc, char *argv[])
     printf("Exit OK\n");
 #endif
 
-    // UnloadAudioStream(stream);   // Close raw audio stream and delete buffers from RAM
-    // CloseAudioDevice();
     CloseWindow();
 
     return 0;

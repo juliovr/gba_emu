@@ -9,6 +9,7 @@
 typedef uint8_t  u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
+typedef uint64_t u64;
 typedef int8_t   s8;
 typedef int16_t  s16;
 typedef int32_t  s32;
@@ -129,6 +130,8 @@ typedef struct CPU {
     u32 spsr_svc;
     u32 spsr_abt;
     u32 spsr_und;
+
+    u64 cycles;
 } CPU;
 
 #define MODE_USER       (0b10000)
@@ -788,7 +791,6 @@ typedef struct Instruction {
     u32 address;
 #ifdef _DEBUG
     u32 encoding;
-    u32 index;
 #endif
 } Instruction;
 
