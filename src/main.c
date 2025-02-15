@@ -191,6 +191,79 @@ load_bios_into_memory()
 #define IO_BLDALPHA     ((u16 *)get_memory_at(cpu, &memory, 0x4000052))
 #define IO_BLDY         ((u16 *)get_memory_at(cpu, &memory, 0x4000054))
 
+#define ADDRESS_CHARACTER_TILE  (0x6000000)
+
+
+typedef struct DisplayControlRegister {
+    u8 video_mode;
+    u8 gbc_mode;
+    u8 bitmap_address;
+    u8 hblank_processing;
+    u8 sprite_dimension;
+    u8 force_blank;
+    u8 enable_bg0;
+    u8 enable_bg1;
+    u8 enable_bg2;
+    u8 enable_bg3;
+    u8 enable_oam;
+    u8 enable_window_0;
+    u8 enable_window_1;
+    u8 enable_sprite_windows;
+} DisplayControlRegister;
+
+static void
+parse_display_control_register(DisplayControlRegister *display_control_register, u16 reg)
+{
+    display_control_register->video_mode            = (reg >> 0) & 0b111;
+    display_control_register->gbc_mode              = (reg >> 3) & 1;
+    display_control_register->bitmap_address        = (reg >> 4) & 1;
+    display_control_register->hblank_processing     = (reg >> 5) & 1;
+    display_control_register->sprite_dimension      = (reg >> 6) & 1;
+    display_control_register->force_blank           = (reg >> 7) & 1;
+    display_control_register->enable_bg0            = (reg >> 8) & 1;
+    display_control_register->enable_bg1            = (reg >> 9) & 1;
+    display_control_register->enable_bg2            = (reg >> 10) & 1;
+    display_control_register->enable_bg3            = (reg >> 11) & 1;
+    display_control_register->enable_oam            = (reg >> 12) & 1;
+    display_control_register->enable_window_0       = (reg >> 13) & 1;
+    display_control_register->enable_window_1       = (reg >> 14) & 1;
+    display_control_register->enable_sprite_windows = (reg >> 15) & 1;
+}
+
+typedef struct BackgroundControl {
+    u8 priority;
+    u8 address_character_tile_data;
+    u8 mosaic_effect;
+    u8 color_palette;
+    u8 address_character_tile_map;
+    u8 screen_over;
+    u8 tile_map_size;
+} BackgroundControl;
+
+static void
+parse_background_layer_configuration(BackgroundControl *background_control, u16 reg_io_background_control)
+{
+    background_control->priority                    = (reg_io_background_control >> 0) & 0b11;
+    background_control->address_character_tile_data = (reg_io_background_control >> 2) & 0b11;
+    background_control->mosaic_effect               = (reg_io_background_control >> 6) & 1;
+    background_control->color_palette               = (reg_io_background_control >> 7) & 1;
+    background_control->address_character_tile_map  = (reg_io_background_control >> 8) & 0b11111;
+    background_control->screen_over                 = (reg_io_background_control >> 13) & 1;
+    background_control->tile_map_size               = (reg_io_background_control >> 14) & 0b11;
+}
+
+static void
+print_background_control(BackgroundControl *background_control, char *name)
+{
+    printf("%s:\n", name);
+    printf("  priority = %d\n", background_control->priority);
+    printf("  address_character_tile_data = %d\n", background_control->address_character_tile_data);
+    printf("  mosaic_effect = %d\n", background_control->mosaic_effect);
+    printf("  color_palette = %d\n", background_control->color_palette);
+    printf("  address_character_tile_map = %d\n", background_control->address_character_tile_map);
+    printf("  screen_over = %d\n", background_control->screen_over);
+    printf("  tile_map_size = %d\n", background_control->tile_map_size);
+}
 
 static void
 init_gba()
@@ -214,7 +287,6 @@ init_gba()
     // This register controls the final sound output. The default setting is 0200h
     *(u16 *)get_memory_at(cpu, &memory, 0x04000088) = 0x0200;
 
-    *IO_DISPCNT = 0x80;
     *IO_BG2PA = 0x0100;
     *IO_BG2PD = 0x0100;
     *IO_BG3PA = 0x0100;
@@ -2870,19 +2942,27 @@ int main(int argc, char *argv[])
             run();
         }
         
-        // if (cpu->cycles / CPU_CYCLES_PER_FRAME > current_frame) {
-        //     current_frame++;
-            
-        //     //
-        //     // Draw frame to buffer
-        //     //
-        //     // fill_video_buffer(video_buffer);
-            
-        // }
 
+        BackgroundControl bg0cnt = {0};
+        BackgroundControl bg1cnt = {0};
+        BackgroundControl bg2cnt = {0};
+        BackgroundControl bg3cnt = {0};
+        parse_background_layer_configuration(&bg0cnt, *IO_BG0CNT);
+        parse_background_layer_configuration(&bg1cnt, *IO_BG1CNT);
+        parse_background_layer_configuration(&bg2cnt, *IO_BG2CNT);
+        parse_background_layer_configuration(&bg3cnt, *IO_BG3CNT);
+
+        // print_background_control(&bg0cnt, "BG0CNT");
+        // print_background_control(&bg1cnt, "BG1CNT");
+        // print_background_control(&bg2cnt, "BG2CNT");
+        // print_background_control(&bg3cnt, "BG3CNT");
+
+        
         //
         // Draw buffer
         //
+        // fill_video_buffer(video_buffer);
+
         BeginDrawing();
             for (int i = 0; i < SCREEN_HEIGHT; i++) {
                 for (int j = 0; j < SCREEN_WIDTH; j++) {
@@ -2919,6 +2999,27 @@ int main(int argc, char *argv[])
             DRAW_TEXT("IO_BG1CNT = 0x%X", *IO_BG1CNT);
             DRAW_TEXT("IO_BG2CNT = 0x%X", *IO_BG2CNT);
             DRAW_TEXT("IO_BG3CNT = 0x%X", *IO_BG3CNT);
+
+            DisplayControlRegister display_control_register = {0};
+            parse_display_control_register(&display_control_register, *IO_DISPCNT);
+
+            DRAW_TEXT("");
+            DRAW_TEXT("Display Control Register:");
+            DRAW_TEXT("video_mode = 0x%X", display_control_register.video_mode);
+            DRAW_TEXT("gbc_mode = 0x%X", display_control_register.gbc_mode);
+            DRAW_TEXT("bitmap_address = 0x%X", display_control_register.bitmap_address);
+            DRAW_TEXT("hblank_processing = 0x%X", display_control_register.hblank_processing);
+            DRAW_TEXT("sprite_dimension = 0x%X", display_control_register.sprite_dimension);
+            DRAW_TEXT("force_blank = 0x%X", display_control_register.force_blank);
+            DRAW_TEXT("enable_bg0 = 0x%X", display_control_register.enable_bg0);
+            DRAW_TEXT("enable_bg1 = 0x%X", display_control_register.enable_bg1);
+            DRAW_TEXT("enable_bg2 = 0x%X", display_control_register.enable_bg2);
+            DRAW_TEXT("enable_bg3 = 0x%X", display_control_register.enable_bg3);
+            DRAW_TEXT("enable_oam = 0x%X", display_control_register.enable_oam);
+            DRAW_TEXT("enable_window_0 = 0x%X", display_control_register.enable_window_0);
+            DRAW_TEXT("enable_window_1 = 0x%X", display_control_register.enable_window_1);
+            DRAW_TEXT("enable_sprite_windows = 0x%X", display_control_register.enable_sprite_windows);
+
 
         EndDrawing();
 
