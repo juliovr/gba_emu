@@ -7,7 +7,7 @@
 #include "types.h"
 
 
-#ifdef _DEBUG
+#ifdef _DEBUG_PRINT
     #ifdef _LINUX
         #define DEBUG_PRINT(format, ...) printf(format, ##__VA_ARGS__)
     #else
@@ -98,6 +98,14 @@ static void
 set_condition_N(u8 bit)
 {
     cpu->cpsr = ((cpu->cpsr & ~(1 << 31)) | ((bit) & 1) << 31);
+}
+
+static void
+set_overflow_subtract(u32 a, u32 b, u32 result)
+{
+    u8 bit = (((a >> 31) == 0) && ((b >> 31) == 1) && ((result >> 31) == 1)) ||
+             (((a >> 31) == 1) && ((b >> 31) == 0) && ((result >> 31) == 0));
+    set_condition_V(bit);
 }
 
 static int
@@ -375,6 +383,7 @@ get_instruction_type_name(InstructionType type, char *buffer)
 u32 current_instruction;
 
 Instruction decoded_instruction;
+Instruction last_executed_instruction;
 
 static int
 should_execute_instruction(Condition condition)
@@ -438,10 +447,10 @@ thumb_execute()
 
                 case THUMB_SHIFT_TYPE_LOGICAL_RIGHT: { // LSR
                     if (shift == 0) {
-                        set_condition_C((*rd >> 31) & 1);
+                        set_condition_C((value >> 31) & 1);
                         *rd = 0;
                     } else {
-                        set_condition_C((*rd >> (shift - 1)) & 1);
+                        set_condition_C((value >> (shift - 1)) & 1);
                         *rd = value >> shift;
                     }
                     
@@ -485,7 +494,8 @@ thumb_execute()
                 result = first_value - second_value;
 
                 set_condition_C(second_value <= first_value ? 1 : 0);
-                set_condition_V((*rd & 0x80000000) != (result & 0x80000000));
+                // set_condition_V((*rd & 0x80000000) != (result & 0x80000000));
+                set_overflow_subtract(first_value, second_value, result);
             } else { // ADD
                 result = first_value + second_value;
 
@@ -513,7 +523,8 @@ thumb_execute()
                     result = *rd - decoded_instruction.offset;
 
                     set_condition_C((u32)decoded_instruction.offset <= *rd ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_overflow_subtract(*rd, decoded_instruction.offset, result);
                 } break;
                 case 2: { // ADD
                     result = *rd + decoded_instruction.offset;
@@ -527,7 +538,8 @@ thumb_execute()
                     result = *rd - decoded_instruction.offset;
 
                     set_condition_C((u32)decoded_instruction.offset <= *rd ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_overflow_subtract(*rd, decoded_instruction.offset, result);
                     
                     *rd = result;
                 } break;
@@ -632,7 +644,8 @@ thumb_execute()
                     store_result = true;
 
                     set_condition_C((result <= *rd) ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_overflow_subtract(*rd, *rs - ~(CONDITION_C), result);
                     cpu->cycles++;
                 } break;
                 case 7: { // ROR
@@ -664,7 +677,7 @@ thumb_execute()
                     store_result = true;
 
                     set_condition_C((result <= *rd) ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1)); // TODO: could overflow?
                     cpu->cycles++;
                 } break;
                 case 10: { // CMP
@@ -672,7 +685,8 @@ thumb_execute()
                     store_result = false;
 
                     set_condition_C((result <= *rd) ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_overflow_subtract(*rd, *rs, result);
                     cpu->cycles++;
                 } break;
                 case 11: { // CMN
@@ -680,7 +694,7 @@ thumb_execute()
                     store_result = false;
 
                     set_condition_C((result <= *rd) ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1)); // TODO: check
                     cpu->cycles++;
                 } break;
                 case 12: { // ORR
@@ -745,7 +759,8 @@ thumb_execute()
                     result = *rd - *rs;
                     
                     set_condition_C((result <= *rs) ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_overflow_subtract(*rd, *rs, result);
                     set_condition_Z(result == 0);
                     set_condition_N((result >> 31) & 1);
                     
@@ -1261,10 +1276,7 @@ thumb_swi:
     }
 
     decoded_instruction.address = cpu->pc - 2;
-
-#ifdef _DEBUG
     decoded_instruction.encoding = current_instruction;
-#endif
 }
 
 void
@@ -1512,7 +1524,8 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                set_overflow_subtract(rn, second_operand, result);
             }
         } break;
         case INSTRUCTION_RSB: {
@@ -1525,11 +1538,13 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                set_overflow_subtract(second_operand, rn, result);
             }
         } break;
         case INSTRUCTION_ADC: {
-            result = rn & second_operand + carry;
+            // result = rn & second_operand + carry;
+            result = rn + second_operand + CONDITION_C;
             store_result = true;
 
             if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
@@ -1542,7 +1557,8 @@ process_data_processing()
             }
         } break;
         case INSTRUCTION_SBC: {
-            result = rn - second_operand + carry - 1;
+            // result = rn - second_operand + carry - 1;
+            result = rn - second_operand - ~(CONDITION_C);
             store_result = true;
 
             if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
@@ -1551,11 +1567,13 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                set_overflow_subtract(rn, second_operand - ~(CONDITION_C), result);
             }
         } break;
         case INSTRUCTION_RSC: {
-            result = second_operand - rn + carry - 1;
+            // result = second_operand - rn + carry - 1;
+            result = second_operand - rn - ~(CONDITION_C);
             store_result = true;
 
             if (decoded_instruction.S == 1 && decoded_instruction.rd == 15) {
@@ -1564,7 +1582,8 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                set_overflow_subtract(second_operand, rn - ~(CONDITION_C), result);
             }
         } break;
         case INSTRUCTION_TST: {
@@ -1601,7 +1620,8 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                set_overflow_subtract(rn, second_operand, result);
             }
         } break;
         case INSTRUCTION_CMN: {
@@ -1613,7 +1633,6 @@ process_data_processing()
             } else if (decoded_instruction.S == 1) {
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
-                // set_condition_C((result <= second_operand) ? 1 : 0);
                 set_condition_C((result < second_operand) ? 1 : 0);
                 set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
             }
@@ -2401,6 +2420,8 @@ process_coprocessor_register_transfers()
 void
 execute()
 {
+    last_executed_instruction = decoded_instruction;
+
     if (IN_THUMB_MODE) {
         thumb_execute();
         return;
@@ -2778,10 +2799,7 @@ data_processing:
 
     decoded_instruction.condition = (current_instruction >> 28) & 0xF;
     decoded_instruction.address = cpu->pc - 4;
-
-#ifdef _DEBUG
     decoded_instruction.encoding = current_instruction;
-#endif
 
     current_instruction = 0;
 }
@@ -3020,6 +3038,28 @@ int main(int argc, char *argv[])
             DRAW_TEXT("enable_window_1 = 0x%X", display_control_register.enable_window_1);
             DRAW_TEXT("enable_sprite_windows = 0x%X", display_control_register.enable_sprite_windows);
 
+            // Test CPSR
+            u32 first_value = 0;
+            u32 second_value = 1;
+            u32 result = first_value - second_value;
+            u32 previous = 0; // What's stored in rd
+
+            u8 c = (second_value <= first_value ? 1 : 0);
+            // u8 v = ((previous & 0x80000000) != (result & 0x80000000)); // TODO: fix this, should be 0
+            // u8 v = ((first_value >> 31) ^ (second_value >> 31)) ^ (result >> 31);
+            u8 v = (((first_value >> 31) == 0) && ((second_value >> 31) == 1) && ((result >> 31) == 1)) ||
+                    (((first_value >> 31) == 1) && ((second_value >> 31) == 0) && ((result >> 31) == 0));
+            u8 z = (result == 0);
+            u8 n = ((result >> 31) & 1);
+
+            u8 test_cpsr = (n << 3) | (z << 2) | (c << 1) | v;
+
+            DRAW_TEXT("");
+            DRAW_TEXT("result = %d, CPSR = 0x%X", result, test_cpsr);
+            DRAW_TEXT("N = %d", n);
+            DRAW_TEXT("Z = %d", z);
+            DRAW_TEXT("C = %d", c);
+            DRAW_TEXT("V = %d", v);
 
         EndDrawing();
 

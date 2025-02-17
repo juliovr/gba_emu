@@ -17,7 +17,7 @@ Execute     Register(s) read from register bank
 ## Condition flags
 I had many errors dealing with the differences between C and V flags. Here are the key differences:
 - C flag: Deals with unsigned arithmetic. It is set when there is an overflow in an unsigned sense (carry out of the register). In other words, if the new value does not fit in the register size, this flag is set.
-- V flag: Deals with signed arithmetic. It is set when there is an overflow in the signed result (i.e., the result is incorrectly represented as a signed number due to the register's limits). In other words, if the new value change the 31-bit, that means a sign shifted occured in 2's complement format.
+- V flag: Deals with signed arithmetic. See https://teaching.idallen.com/dat2343/10f/notes/040_overflow.txt
 
 ## References
 - [GBATEK](https://problemkaputt.de/gbatek.htm)
@@ -27,6 +27,3 @@ I had many errors dealing with the differences between C and V flags. Here are t
 - [GBA Architecture](https://www.copetti.org/writings/consoles/game-boy-advance/)
 - [BIOS File](https://archive.org/details/gba_bios_202206)
 - [ARM Simulator to validate how instructions change the Status Register](https://cpulator.01xz.net/?sys=arm)
-
-TODO: next steps:
-1. Pick an instruction at random and compare the registers and cpsr with the mgba debug console.

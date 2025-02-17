@@ -789,9 +789,7 @@ typedef struct Instruction {
     u32 mask;
 
     u32 address;
-#ifdef _DEBUG
     u32 encoding;
-#endif
 } Instruction;
 
 
