@@ -23,6 +23,8 @@ CPU *cpu = &gba_cpu;
 
 GBAMemory memory = {0};
 
+static u8 paused = 0;
+
 
 //
 // Control Bits
@@ -98,6 +100,14 @@ static void
 set_condition_N(u8 bit)
 {
     cpu->cpsr = ((cpu->cpsr & ~(1 << 31)) | ((bit) & 1) << 31);
+}
+
+static void
+set_overflow_addition(u32 a, u32 b, u32 result)
+{
+    u8 bit = (((a >> 31) == 0) && ((b >> 31) == 0) && ((result >> 31) == 1)) ||
+             (((a >> 31) == 1) && ((b >> 31) == 1) && ((result >> 31) == 0));
+    set_condition_V(bit);
 }
 
 static void
@@ -377,7 +387,7 @@ get_instruction_type_name(InstructionType type, char *buffer)
 u32 current_instruction;
 
 Instruction decoded_instruction;
-Instruction last_executed_instruction;
+Instruction last_instruction;
 
 static int
 should_execute_instruction(Condition condition)
@@ -392,7 +402,7 @@ should_execute_instruction(Condition condition)
         case CONDITION_VS: return (CONDITION_V == 1);
         case CONDITION_VC: return (CONDITION_V == 0);
         case CONDITION_HI: return (CONDITION_C == 1 && CONDITION_Z == 0);
-        case CONDITION_LS: return (CONDITION_C == 0 && CONDITION_Z == 1);
+        case CONDITION_LS: return (CONDITION_C == 0 || CONDITION_Z == 1);
         case CONDITION_GE: return (CONDITION_N == CONDITION_V);
         case CONDITION_LT: return (CONDITION_N != CONDITION_V);
         case CONDITION_GT: return (CONDITION_Z == 0 && CONDITION_N == CONDITION_V);
@@ -415,10 +425,7 @@ should_execute_instruction(Condition condition)
 void
 thumb_execute()
 {
-    if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_thumb_execute;
-    
     DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, cycles = %lld\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, cpu->cycles);
-
 
     switch (decoded_instruction.type) {
         case INSTRUCTION_MOVE_SHIFTED_REGISTER: {
@@ -488,13 +495,13 @@ thumb_execute()
                 result = first_value - second_value;
 
                 set_condition_C(second_value <= first_value ? 1 : 0);
-                // set_condition_V((*rd & 0x80000000) != (result & 0x80000000));
                 set_overflow_subtract(first_value, second_value, result);
             } else { // ADD
                 result = first_value + second_value;
 
                 set_condition_C((result < second_value) ? 1 : 0);
-                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                set_overflow_addition(first_value, second_value, result);
             }
 
             *rd = result;
@@ -517,14 +524,14 @@ thumb_execute()
                     result = *rd - decoded_instruction.offset;
 
                     set_condition_C((u32)decoded_instruction.offset <= *rd ? 1 : 0);
-                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     set_overflow_subtract(*rd, decoded_instruction.offset, result);
                 } break;
                 case 2: { // ADD
                     result = *rd + decoded_instruction.offset;
 
                     set_condition_C((result < (u32)decoded_instruction.offset) ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_overflow_addition(*rd, decoded_instruction.offset, result);
                     
                     *rd = result;
                 } break;
@@ -532,7 +539,6 @@ thumb_execute()
                     result = *rd - decoded_instruction.offset;
 
                     set_condition_C((u32)decoded_instruction.offset <= *rd ? 1 : 0);
-                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     set_overflow_subtract(*rd, decoded_instruction.offset, result);
                     
                     *rd = result;
@@ -630,7 +636,8 @@ thumb_execute()
                     store_result = true;
 
                     set_condition_C((result < *rd) ? 1 : 0); // TODO: check
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                    set_overflow_addition(*rd, *rs + CONDITION_C, result);
                     cpu->cycles++;
                 } break;
                 case 6: { // SBC
@@ -638,7 +645,6 @@ thumb_execute()
                     store_result = true;
 
                     set_condition_C((result <= *rd) ? 1 : 0);
-                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     set_overflow_subtract(*rd, *rs - ~(CONDITION_C), result);
                     cpu->cycles++;
                 } break;
@@ -671,7 +677,7 @@ thumb_execute()
                     store_result = true;
 
                     set_condition_C((result <= *rd) ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1)); // TODO: could overflow?
+                    set_overflow_subtract(0, *rs, result);
                     cpu->cycles++;
                 } break;
                 case 10: { // CMP
@@ -679,7 +685,6 @@ thumb_execute()
                     store_result = false;
 
                     set_condition_C((result <= *rd) ? 1 : 0);
-                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     set_overflow_subtract(*rd, *rs, result);
                     cpu->cycles++;
                 } break;
@@ -687,8 +692,10 @@ thumb_execute()
                     result = *rd + *rs;
                     store_result = false;
 
-                    set_condition_C((result <= *rd) ? 1 : 0);
-                    set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1)); // TODO: check
+                    set_condition_C((result < *rd) ? 1 : 0);
+                    // set_condition_C(*rs <= *rd ? 1 : 0);
+                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1)); // TODO: check
+                    set_overflow_addition(*rd, *rs, result);
                     cpu->cycles++;
                 } break;
                 case 12: { // ORR
@@ -753,7 +760,6 @@ thumb_execute()
                     result = *rd - *rs;
                     
                     set_condition_C((result <= *rs) ? 1 : 0);
-                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     set_overflow_subtract(*rd, *rs, result);
                     set_condition_Z(result == 0);
                     set_condition_N((result >> 31) & 1);
@@ -1101,7 +1107,6 @@ thumb_execute()
         } break;
     }
 
-exit_thumb_execute:
     decoded_instruction = (Instruction){0};
 }
 
@@ -1490,7 +1495,8 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C((result < second_operand) ? 1 : 0);
-                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                set_overflow_addition(rn, second_operand, result);
             }
         } break;
         case INSTRUCTION_AND: {
@@ -1527,7 +1533,6 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 set_overflow_subtract(rn, second_operand, result);
             }
         } break;
@@ -1541,7 +1546,6 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 set_overflow_subtract(second_operand, rn, result);
             }
         } break;
@@ -1556,7 +1560,8 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C((result < second_operand) ? 1 : 0);
-                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                set_overflow_addition(rn, second_operand + CONDITION_C, result);
             }
         } break;
         case INSTRUCTION_SBC: {
@@ -1570,7 +1575,6 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 set_overflow_subtract(rn, second_operand - ~(CONDITION_C), result);
             }
         } break;
@@ -1585,7 +1589,6 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 set_overflow_subtract(second_operand, rn - ~(CONDITION_C), result);
             }
         } break;
@@ -1623,7 +1626,6 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C(second_operand <= rn ? 1 : 0);
-                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 set_overflow_subtract(rn, second_operand, result);
             }
         } break;
@@ -1637,7 +1639,8 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C((result < second_operand) ? 1 : 0);
-                set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
+                set_overflow_addition(rn, second_operand, result);
             }
         } break;
         case INSTRUCTION_ORR: {
@@ -2434,18 +2437,24 @@ process_coprocessor_register_transfers()
     }
 }
 
+u32 *last_register_compared = 0;
+
+static int found = 0;
 
 void
 execute()
 {
-    last_executed_instruction = decoded_instruction;
+    if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
 
+    if (decoded_instruction.address == 0x00001BC2) {
+        found = 1;
+    }
+    
     if (IN_THUMB_MODE) {
         thumb_execute();
         return;
     }
 
-    if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
     if (!should_execute_instruction(decoded_instruction.condition)) {
         DEBUG_PRINT("0x%08X: 0x%08X %s, cpsr = 0x%08X, cycles = %lld... Skipped\n", decoded_instruction.address, decoded_instruction.encoding, get_instruction_type_string(decoded_instruction.type), cpu->cpsr, cpu->cycles);
         cpu->cycles++;
@@ -2496,6 +2505,7 @@ execute()
     }
 
 exit_execute:
+    last_instruction = decoded_instruction;
     decoded_instruction = (Instruction){0};
 }
 
@@ -2835,8 +2845,6 @@ fetch()
 
 
 
-static u8 paused = 0;
-
 
 #define CPU_CYCLES_PER_FRAME (280896)
 
@@ -2856,6 +2864,7 @@ run()
         execute();
         decode();
         fetch();
+        if (paused) return;
     }
     
     current_frame++;
@@ -2946,38 +2955,8 @@ static int text_drawn = 0;
 // }
 
 
-static void
-test_at(u32 at)
-{
-    at &= 0xFFFF;
-    at %= 0x8000;
-
-    int x = 5;
-}
-
 int main(int argc, char *argv[])
 {
-    // test_at(0x3008000);
-    // test_at(0x3018000);
-    // test_at(0x3028000);
-    // test_at(0x3038000);
-    // test_at(0x3048000);
-    
-    // test_at(0x3108000);
-    // test_at(0x3208000);
-    // test_at(0x3308000);
-
-    
-    // test_at(0x3008111);
-    // test_at(0x3018122);
-    // test_at(0x3028333);
-    // test_at(0x3038444);
-    // test_at(0x3048555);
-    
-    // test_at(0x3107FFF);
-    // test_at(0x3208222);
-    // test_at(0x3308AAA);
-
     init_gba();
     
     // char *filename = "Donkey Kong Country 2.gba";
@@ -3065,48 +3044,59 @@ int main(int argc, char *argv[])
             DRAW_TEXT("IO_BG2CNT = 0x%X", *IO_BG2CNT);
             DRAW_TEXT("IO_BG3CNT = 0x%X", *IO_BG3CNT);
 
-            DisplayControlRegister display_control_register = {0};
-            parse_display_control_register(&display_control_register, *IO_DISPCNT);
-
+            // CPU state
             DRAW_TEXT("");
-            DRAW_TEXT("Display Control Register:");
-            DRAW_TEXT("video_mode = 0x%X", display_control_register.video_mode);
-            DRAW_TEXT("gbc_mode = 0x%X", display_control_register.gbc_mode);
-            DRAW_TEXT("bitmap_address = 0x%X", display_control_register.bitmap_address);
-            DRAW_TEXT("hblank_processing = 0x%X", display_control_register.hblank_processing);
-            DRAW_TEXT("sprite_dimension = 0x%X", display_control_register.sprite_dimension);
-            DRAW_TEXT("force_blank = 0x%X", display_control_register.force_blank);
-            DRAW_TEXT("enable_bg0 = 0x%X", display_control_register.enable_bg0);
-            DRAW_TEXT("enable_bg1 = 0x%X", display_control_register.enable_bg1);
-            DRAW_TEXT("enable_bg2 = 0x%X", display_control_register.enable_bg2);
-            DRAW_TEXT("enable_bg3 = 0x%X", display_control_register.enable_bg3);
-            DRAW_TEXT("enable_oam = 0x%X", display_control_register.enable_oam);
-            DRAW_TEXT("enable_window_0 = 0x%X", display_control_register.enable_window_0);
-            DRAW_TEXT("enable_window_1 = 0x%X", display_control_register.enable_window_1);
-            DRAW_TEXT("enable_sprite_windows = 0x%X", display_control_register.enable_sprite_windows);
+            DRAW_TEXT(" r0: 0x%X     r1: 0x%X     r2: 0x%X     r3: 0x%X", cpu->r0, cpu->r1, cpu->r2, cpu->r3);
+            DRAW_TEXT(" r4: 0x%X     r5: 0x%X     r6: 0x%X     r7: 0x%X", cpu->r4, cpu->r5, cpu->r6, cpu->r7);
+            DRAW_TEXT(" r8: 0x%X     r9: 0x%X    r10: 0x%X    r11: 0x%X", cpu->r8, cpu->r9, cpu->r10, cpu->r11);
+            DRAW_TEXT("r12: 0x%X    r13: 0x%X    r14: 0x%X    r15: 0x%X", cpu->r12, cpu->r13, cpu->r14, cpu->r15);
+            DRAW_TEXT("CPSR: 0x%X", cpu->cpsr);
+            DRAW_TEXT("0x%X: 0x%X", decoded_instruction.address, decoded_instruction.encoding);
+
+            if (found) {
+                DRAW_TEXT("FOUND");
+            }
+
+            // DisplayControlRegister display_control_register = {0};
+            // parse_display_control_register(&display_control_register, *IO_DISPCNT);
+
+            // DRAW_TEXT("");
+            // DRAW_TEXT("Display Control Register:");
+            // DRAW_TEXT("video_mode = 0x%X", display_control_register.video_mode);
+            // DRAW_TEXT("gbc_mode = 0x%X", display_control_register.gbc_mode);
+            // DRAW_TEXT("bitmap_address = 0x%X", display_control_register.bitmap_address);
+            // DRAW_TEXT("hblank_processing = 0x%X", display_control_register.hblank_processing);
+            // DRAW_TEXT("sprite_dimension = 0x%X", display_control_register.sprite_dimension);
+            // DRAW_TEXT("force_blank = 0x%X", display_control_register.force_blank);
+            // DRAW_TEXT("enable_bg0 = 0x%X", display_control_register.enable_bg0);
+            // DRAW_TEXT("enable_bg1 = 0x%X", display_control_register.enable_bg1);
+            // DRAW_TEXT("enable_bg2 = 0x%X", display_control_register.enable_bg2);
+            // DRAW_TEXT("enable_bg3 = 0x%X", display_control_register.enable_bg3);
+            // DRAW_TEXT("enable_oam = 0x%X", display_control_register.enable_oam);
+            // DRAW_TEXT("enable_window_0 = 0x%X", display_control_register.enable_window_0);
+            // DRAW_TEXT("enable_window_1 = 0x%X", display_control_register.enable_window_1);
+            // DRAW_TEXT("enable_sprite_windows = 0x%X", display_control_register.enable_sprite_windows);
 
             // Test CPSR
-            u32 first_value = 0;
-            u32 second_value = 1;
-            u32 result = first_value - second_value;
-            u32 previous = 0; // What's stored in rd
+            // u32 first_value = 0;
+            // u32 second_value = 1;
+            // u32 result = first_value - second_value;
+            // u32 previous = 0; // What's stored in rd
 
-            u8 c = (second_value <= first_value ? 1 : 0);
-            // u8 v = ((previous & 0x80000000) != (result & 0x80000000)); // TODO: fix this, should be 0
-            // u8 v = ((first_value >> 31) ^ (second_value >> 31)) ^ (result >> 31);
-            u8 v = (((first_value >> 31) == 0) && ((second_value >> 31) == 1) && ((result >> 31) == 1)) ||
-                    (((first_value >> 31) == 1) && ((second_value >> 31) == 0) && ((result >> 31) == 0));
-            u8 z = (result == 0);
-            u8 n = ((result >> 31) & 1);
+            // u8 c = (second_value <= first_value ? 1 : 0);
+            // u8 v = (((first_value >> 31) == 0) && ((second_value >> 31) == 1) && ((result >> 31) == 1)) ||
+            //         (((first_value >> 31) == 1) && ((second_value >> 31) == 0) && ((result >> 31) == 0));
+            // u8 z = (result == 0);
+            // u8 n = ((result >> 31) & 1);
 
-            u8 test_cpsr = (n << 3) | (z << 2) | (c << 1) | v;
+            // u8 test_cpsr = (n << 3) | (z << 2) | (c << 1) | v;
 
-            DRAW_TEXT("");
-            DRAW_TEXT("result = %d, CPSR = 0x%X", result, test_cpsr);
-            DRAW_TEXT("N = %d", n);
-            DRAW_TEXT("Z = %d", z);
-            DRAW_TEXT("C = %d", c);
-            DRAW_TEXT("V = %d", v);
+            // DRAW_TEXT("");
+            // DRAW_TEXT("result = %d, CPSR = 0x%X", result, test_cpsr);
+            // DRAW_TEXT("N = %d", n);
+            // DRAW_TEXT("Z = %d", z);
+            // DRAW_TEXT("C = %d", c);
+            // DRAW_TEXT("V = %d", v);
 
         EndDrawing();
 
