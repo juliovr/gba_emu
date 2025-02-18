@@ -21,6 +21,7 @@ I had many errors dealing with the differences between C and V flags. Here are t
 
 ## References
 - [GBATEK](https://problemkaputt.de/gbatek.htm)
+- [CowBite](https://www.cs.rit.edu/~tjh8300/CowBite/CowBiteSpec.htm)
 - [ARM7TDMI Reference Manual](https://ww1.microchip.com/downloads/en/DeviceDoc/DDI0029G_7TDMI_R3_trm.pdf)
 - [ARM Architecture Reference Manual](https://www.intel.com/programmable/technical-pdfs/654202.pdf)
 - [ARM7TDMI Data Sheet](https://www.dwedit.org/files/ARM7TDMI.pdf)
