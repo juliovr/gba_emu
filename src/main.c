@@ -2446,7 +2446,7 @@ execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
 
-    if (decoded_instruction.address == 0x00001BC2) {
+    if (decoded_instruction.address == 0x000003CC) {
         found = 1;
     }
     
@@ -2845,6 +2845,20 @@ fetch()
 
 
 
+#define SCANLINE_CYCLES 1232
+#define MAX_SCANLINE 228
+
+static u8 current_scanline;
+
+static void
+set_current_scanline()
+{
+    u8 scanline = (cpu->cycles / SCANLINE_CYCLES) % MAX_SCANLINE;
+    if (scanline != current_scanline) {
+        current_scanline = scanline;
+        *IO_VCOUNT = current_scanline;
+    }
+}
 
 #define CPU_CYCLES_PER_FRAME (280896)
 
@@ -2861,6 +2875,7 @@ run()
     // }
 
     while (cpu->cycles / CPU_CYCLES_PER_FRAME <= current_frame) {
+        set_current_scanline();
         execute();
         decode();
         fetch();
@@ -2868,6 +2883,7 @@ run()
     }
     
     current_frame++;
+
 }
 
 // Video
@@ -3006,7 +3022,7 @@ int main(int argc, char *argv[])
         // Draw buffer
         //
         // fill_video_buffer(video_buffer);
-
+#if 0
         BeginDrawing();
             for (int i = 0; i < SCREEN_HEIGHT; i++) {
                 for (int j = 0; j < SCREEN_WIDTH; j++) {
@@ -3099,6 +3115,7 @@ int main(int argc, char *argv[])
             // DRAW_TEXT("V = %d", v);
 
         EndDrawing();
+#endif
 
     }
 
