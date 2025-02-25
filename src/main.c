@@ -2845,22 +2845,40 @@ fetch()
 
 
 
-#define SCANLINE_CYCLES 1232
-#define MAX_SCANLINE 228
+#define CYCLES_HDRAW            960
+#define CYCLES_HBLANK           272
+#define CYCLES_SCANLINE         (CYCLES_HDRAW + CYCLES_HBLANK)
+#define CYCLES_VDRAW            160*CYCLES_SCANLINE
+#define CYCLES_VBLANK           68*CYCLES_SCANLINE
+#define MAX_SCANLINE            228
+#define CPU_CYCLES_PER_FRAME    (280896)
 
 static u8 current_scanline;
 
 static void
-set_current_scanline()
+set_lcd_io()
 {
-    u8 scanline = (cpu->cycles / SCANLINE_CYCLES) % MAX_SCANLINE;
+    u32 cycles_current_frame = (cpu->cycles % CPU_CYCLES_PER_FRAME);
+    u32 cycles_current_scanline = (cycles_current_frame / CYCLES_SCANLINE);
+
+    u8 scanline = cycles_current_scanline % MAX_SCANLINE;
     if (scanline != current_scanline) {
         current_scanline = scanline;
         *IO_VCOUNT = current_scanline;
     }
+    
+
+    *IO_DISPSTAT &= 0xFFFC; // Clear last 2 bits
+    
+    if (cycles_current_frame > CYCLES_VDRAW && cycles_current_frame <= CYCLES_VBLANK) {
+        *IO_DISPSTAT |= 1; // Set bit 0
+    }
+
+    if (cycles_current_scanline > CYCLES_HDRAW && cycles_current_scanline <= CYCLES_HBLANK) {
+        *IO_DISPSTAT |= 0b10; // Set bit 1
+    }
 }
 
-#define CPU_CYCLES_PER_FRAME (280896)
 
 static u32 current_frame = 0;
 
@@ -2875,8 +2893,10 @@ run()
     // }
 
     while (cpu->cycles / CPU_CYCLES_PER_FRAME <= current_frame) {
-        set_current_scanline();
+        
         execute();
+        set_lcd_io();
+        
         decode();
         fetch();
         if (paused) return;
