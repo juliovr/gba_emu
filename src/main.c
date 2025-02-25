@@ -947,7 +947,11 @@ thumb_execute()
         } break;
         case INSTRUCTION_PUSH_POP_REGISTERS: {
             u8 register_list = (u8)decoded_instruction.register_list;
-            assert(register_list != 0);
+            // assert(register_list != 0);
+            if (register_list == 0) {
+                cpu->cycles++;
+                goto exit_thumb_execute;
+            }
 
             u32 sp = cpu->sp;
             
@@ -1107,6 +1111,7 @@ thumb_execute()
         } break;
     }
 
+exit_thumb_execute:
     decoded_instruction = (Instruction){0};
 }
 
@@ -3042,7 +3047,7 @@ int main(int argc, char *argv[])
         // Draw buffer
         //
         // fill_video_buffer(video_buffer);
-#if 0
+#if 1
         BeginDrawing();
             for (int i = 0; i < SCREEN_HEIGHT; i++) {
                 for (int j = 0; j < SCREEN_WIDTH; j++) {

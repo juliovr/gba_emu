@@ -401,7 +401,7 @@ get_memory_at(CPU *cpu, GBAMemory *gba_memory, u32 at)
 
     if (at <= 0x070003FF) return (gba_memory->oam_obj_attributes + (at - 0x07000000));
     if (at <= 0x07FFFFFF) {
-        assert(!"Check this");
+        // assert(!"Check this");
         at &= 0xFFF;
         at %= 0x400;
 
