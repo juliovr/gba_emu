@@ -203,7 +203,8 @@ load_bios_into_memory()
 #define IO_BLDALPHA     ((u16 *)get_memory_at(cpu, &memory, 0x4000052))
 #define IO_BLDY         ((u16 *)get_memory_at(cpu, &memory, 0x4000054))
 
-#define ADDRESS_CHARACTER_TILE  (0x6000000)
+#define VRAM_ADDRESS    (0x6000000)
+#define VRAM            ((u16 *)get_memory_at(cpu, &memory, VRAM_ADDRESS))
 
 
 typedef struct DisplayControlRegister {
@@ -268,13 +269,13 @@ static void
 print_background_control(BackgroundControl *background_control, char *name)
 {
     printf("%s:\n", name);
-    printf("  priority = %d\n", background_control->priority);
-    printf("  address_character_tile_data = %d\n", background_control->address_character_tile_data);
-    printf("  mosaic_effect = %d\n", background_control->mosaic_effect);
-    printf("  color_palette = %d\n", background_control->color_palette);
-    printf("  address_character_tile_map = %d\n", background_control->address_character_tile_map);
-    printf("  screen_over = %d\n", background_control->screen_over);
-    printf("  tile_map_size = %d\n", background_control->tile_map_size);
+    printf("  priority = 0x%08X\n", background_control->priority);
+    printf("  address_character_tile_data = 0x%08X\n", background_control->address_character_tile_data);
+    printf("  mosaic_effect = 0x%08X\n", background_control->mosaic_effect);
+    printf("  color_palette = 0x%08X\n", background_control->color_palette);
+    printf("  address_character_tile_map = 0x%08X\n", background_control->address_character_tile_map);
+    printf("  screen_over = 0x%08X\n", background_control->screen_over);
+    printf("  tile_map_size = 0x%08X\n", background_control->tile_map_size);
 }
 
 static void
@@ -409,10 +410,10 @@ should_execute_instruction(Condition condition)
         case CONDITION_LE: return (CONDITION_Z == 1 || CONDITION_N != CONDITION_V);
         case CONDITION_AL: return true; // Always
         default: {
-            fprintf(stderr, "Unexpected condition: %X\n", condition);
+            fprintf(stderr, "Unexpected condition: %08X\n", condition);
             char type_name[64];
             get_instruction_type_name(decoded_instruction.type, type_name);
-            fprintf(stderr, "Address: 0x%X, Current instruction: 0x%X -> type = %s\n", decoded_instruction.address, current_instruction, type_name);
+            fprintf(stderr, "Address: 0x%08X, Current instruction: 0x%08X -> type = %s\n", decoded_instruction.address, current_instruction, type_name);
 
             print_cpu_state(cpu);
 
@@ -1284,7 +1285,7 @@ thumb_swi:
         };
     }
     else {
-        fprintf(stderr, "Thumb instruction unknown: 0x%X\n", current_instruction);
+        fprintf(stderr, "Thumb instruction unknown: 0x%08X\n", current_instruction);
         exit(1);
     }
 
@@ -2825,7 +2826,7 @@ data_processing:
 
 
     } else {
-        fprintf(stderr, "Instruction unknown: 0x%X\n", current_instruction);
+        fprintf(stderr, "Instruction unknown: 0x%08X\n", current_instruction);
         exit(1);
     }
 
@@ -2950,7 +2951,7 @@ static void AudioInputCallback(void *buffer, unsigned int frames)
 static int text_height = 30;
 static int text_drawn = 0;
 
-// #ifdef _DEBUG
+#ifdef _DEBUG
 #ifdef _LINUX
     #define DRAW_TEXT(format, ...)                                          \
         do {                                                                \
@@ -2968,32 +2969,43 @@ static int text_drawn = 0;
             text_drawn++;                                                   \
         } while (0)
 #endif
-// #else
-//     #define DRAW_TEXT(...)
-// #endif
+#else
+    #define DRAW_TEXT(...)
+#endif
 
 
-// #define VIDEO_BUFFER_SIZE (WINDOW_WIDTH*WINDOW_HEIGHT)
-// u32 *video_buffer;
 
-// static void
-// fill_video_buffer(u32 *buffer)
-// {
-//     // if (*IO_DISPCNT == 0x80) {
-//     //     for (int i = 0; i < VIDEO_BUFFER_SIZE; ++i) {
-//     //         buffer[i] = (WHITE.r << 24) |
-//     //                     (WHITE.g << 16) |
-//     //                     (WHITE.b << 8) |
-//     //                     (WHITE.a << 0);
-//     //     }
-//     // }
+#define VIDEO_BUFFER_SIZE SCREEN_SIZE
 
-    
-//     // Mode 3
-//     if ((*IO_DISPCNT & 0b111) == 3) {
-//         DRAW_TEXT("Mode 3");
-//     }
-// }
+static void
+fill_video_buffer(u32 *buffer)
+{
+    if ((*IO_DISPCNT >> 7) & 1) {
+        // Force blank
+
+        for (int i = 0; i < VIDEO_BUFFER_SIZE; ++i) {
+            buffer[i] = (WHITE.r << 24) |
+                        (WHITE.g << 16) |
+                        (WHITE.b << 8) |
+                        (WHITE.a << 0);
+        }
+    } else if ((*IO_DISPCNT & 0b111) == 3) {
+        // Mode 3
+
+        for (int i = 0; i < VIDEO_BUFFER_SIZE; ++i) {
+            u16 pixel = VRAM[i];
+            u8 r = ((pixel >> 0)  & 0x1F) << 3;
+            u8 g = ((pixel >> 5)  & 0x1F) << 3;
+            u8 b = ((pixel >> 10) & 0x1F) << 3;
+            u8 a = 0xFF;
+
+            buffer[i] = (r << 24) |
+                        (g << 16) |
+                        (b << 8) |
+                        (a << 0);
+        }
+    }
+}
 
 
 int main(int argc, char *argv[])
@@ -3008,12 +3020,13 @@ int main(int argc, char *argv[])
     }
     
     // CartridgeHeader *header = (CartridgeHeader *)memory.game_pak_rom;
-    // printf("fixed_value = 0x%X, expected = 0x96\n", header->fixed_value);
+    // printf("fixed_value = 0x%08X, expected = 0x96\n", header->fixed_value);
 
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, filename);
     // SetTargetFPS(60);
 
+    u32 *video_buffer = (u32 *)malloc(VIDEO_BUFFER_SIZE*sizeof(u32));
 
     // Main loop
     while (!WindowShouldClose()) {
@@ -3037,30 +3050,24 @@ int main(int argc, char *argv[])
         parse_background_layer_configuration(&bg2cnt, *IO_BG2CNT);
         parse_background_layer_configuration(&bg3cnt, *IO_BG3CNT);
 
-        // print_background_control(&bg0cnt, "BG0CNT");
-        // print_background_control(&bg1cnt, "BG1CNT");
-        // print_background_control(&bg2cnt, "BG2CNT");
-        // print_background_control(&bg3cnt, "BG3CNT");
-
         
         //
         // Draw buffer
         //
-        // fill_video_buffer(video_buffer);
+        fill_video_buffer(video_buffer);
 #if 1
         BeginDrawing();
             for (int i = 0; i < SCREEN_HEIGHT; i++) {
                 for (int j = 0; j < SCREEN_WIDTH; j++) {
                     int index = (i * SCREEN_WIDTH) + j;
-                    // Color color = (state->screen[index] == 1) ? WHITE : BLACK;
-                    // u32 rgba = video_buffer[index];
-                    // Color color = (Color) {
-                    //     .r = (rgba >> 24) & 0xFF,
-                    //     .g = (rgba >> 16) & 0xFF,
-                    //     .b = (rgba >> 8) & 0xFF,
-                    //     .a = (rgba >> 0) & 0xFF,
-                    // };
-                    Color color = WHITE;
+                    u32 rgba = video_buffer[index];
+                    Color color = (Color) {
+                        .r = (rgba >> 24) & 0xFF,
+                        .g = (rgba >> 16) & 0xFF,
+                        .b = (rgba >> 8) & 0xFF,
+                        .a = (rgba >> 0) & 0xFF,
+                    };
+                    
                     float x = (float)j*SCALE;
                     float y = (float)i*SCALE;
                     float width = SCALE;
@@ -3079,65 +3086,24 @@ int main(int argc, char *argv[])
             DRAW_TEXT("Frame = %d", current_frame);
             DRAW_TEXT("GetFPS() = %d", GetFPS());
 
-            DRAW_TEXT("IO_DISPCNT = 0x%X", *IO_DISPCNT);
-            DRAW_TEXT("IO_BG0CNT = 0x%X", *IO_BG0CNT);
-            DRAW_TEXT("IO_BG1CNT = 0x%X", *IO_BG1CNT);
-            DRAW_TEXT("IO_BG2CNT = 0x%X", *IO_BG2CNT);
-            DRAW_TEXT("IO_BG3CNT = 0x%X", *IO_BG3CNT);
+            DRAW_TEXT("IO_DISPCNT = 0x%08X", *IO_DISPCNT);
+            DRAW_TEXT("IO_BG0CNT = 0x%08X", *IO_BG0CNT);
+            DRAW_TEXT("IO_BG1CNT = 0x%08X", *IO_BG1CNT);
+            DRAW_TEXT("IO_BG2CNT = 0x%08X", *IO_BG2CNT);
+            DRAW_TEXT("IO_BG3CNT = 0x%08X", *IO_BG3CNT);
 
             // CPU state
             DRAW_TEXT("");
-            DRAW_TEXT(" r0: 0x%X     r1: 0x%X     r2: 0x%X     r3: 0x%X", cpu->r0, cpu->r1, cpu->r2, cpu->r3);
-            DRAW_TEXT(" r4: 0x%X     r5: 0x%X     r6: 0x%X     r7: 0x%X", cpu->r4, cpu->r5, cpu->r6, cpu->r7);
-            DRAW_TEXT(" r8: 0x%X     r9: 0x%X    r10: 0x%X    r11: 0x%X", cpu->r8, cpu->r9, cpu->r10, cpu->r11);
-            DRAW_TEXT("r12: 0x%X    r13: 0x%X    r14: 0x%X    r15: 0x%X", cpu->r12, cpu->r13, cpu->r14, cpu->r15);
-            DRAW_TEXT("CPSR: 0x%X", cpu->cpsr);
-            DRAW_TEXT("0x%X: 0x%X", decoded_instruction.address, decoded_instruction.encoding);
+            DRAW_TEXT(" r0: 0x%08X     r1: 0x%08X     r2: 0x%08X     r3: 0x%08X", cpu->r0, cpu->r1, cpu->r2, cpu->r3);
+            DRAW_TEXT(" r4: 0x%08X     r5: 0x%08X     r6: 0x%08X     r7: 0x%08X", cpu->r4, cpu->r5, cpu->r6, cpu->r7);
+            DRAW_TEXT(" r8: 0x%08X     r9: 0x%08X    r10: 0x%08X    r11: 0x%08X", cpu->r8, cpu->r9, cpu->r10, cpu->r11);
+            DRAW_TEXT("r12: 0x%08X    r13: 0x%08X    r14: 0x%08X    r15: 0x%08X", cpu->r12, cpu->r13, cpu->r14, cpu->r15);
+            DRAW_TEXT("CPSR: 0x%08X", cpu->cpsr);
+            DRAW_TEXT("0x%08X: 0x%08X", decoded_instruction.address, decoded_instruction.encoding);
 
             if (found) {
                 DRAW_TEXT("FOUND");
             }
-
-            // DisplayControlRegister display_control_register = {0};
-            // parse_display_control_register(&display_control_register, *IO_DISPCNT);
-
-            // DRAW_TEXT("");
-            // DRAW_TEXT("Display Control Register:");
-            // DRAW_TEXT("video_mode = 0x%X", display_control_register.video_mode);
-            // DRAW_TEXT("gbc_mode = 0x%X", display_control_register.gbc_mode);
-            // DRAW_TEXT("bitmap_address = 0x%X", display_control_register.bitmap_address);
-            // DRAW_TEXT("hblank_processing = 0x%X", display_control_register.hblank_processing);
-            // DRAW_TEXT("sprite_dimension = 0x%X", display_control_register.sprite_dimension);
-            // DRAW_TEXT("force_blank = 0x%X", display_control_register.force_blank);
-            // DRAW_TEXT("enable_bg0 = 0x%X", display_control_register.enable_bg0);
-            // DRAW_TEXT("enable_bg1 = 0x%X", display_control_register.enable_bg1);
-            // DRAW_TEXT("enable_bg2 = 0x%X", display_control_register.enable_bg2);
-            // DRAW_TEXT("enable_bg3 = 0x%X", display_control_register.enable_bg3);
-            // DRAW_TEXT("enable_oam = 0x%X", display_control_register.enable_oam);
-            // DRAW_TEXT("enable_window_0 = 0x%X", display_control_register.enable_window_0);
-            // DRAW_TEXT("enable_window_1 = 0x%X", display_control_register.enable_window_1);
-            // DRAW_TEXT("enable_sprite_windows = 0x%X", display_control_register.enable_sprite_windows);
-
-            // Test CPSR
-            // u32 first_value = 0;
-            // u32 second_value = 1;
-            // u32 result = first_value - second_value;
-            // u32 previous = 0; // What's stored in rd
-
-            // u8 c = (second_value <= first_value ? 1 : 0);
-            // u8 v = (((first_value >> 31) == 0) && ((second_value >> 31) == 1) && ((result >> 31) == 1)) ||
-            //         (((first_value >> 31) == 1) && ((second_value >> 31) == 0) && ((result >> 31) == 0));
-            // u8 z = (result == 0);
-            // u8 n = ((result >> 31) & 1);
-
-            // u8 test_cpsr = (n << 3) | (z << 2) | (c << 1) | v;
-
-            // DRAW_TEXT("");
-            // DRAW_TEXT("result = %d, CPSR = 0x%X", result, test_cpsr);
-            // DRAW_TEXT("N = %d", n);
-            // DRAW_TEXT("Z = %d", z);
-            // DRAW_TEXT("C = %d", c);
-            // DRAW_TEXT("V = %d", v);
 
         EndDrawing();
 #endif
