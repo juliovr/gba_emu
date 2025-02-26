@@ -314,36 +314,21 @@ get_register(CPU *cpu, u8 rn)
 }
 
 
-// TODO: is it necessary to make fields for the "Not used" data to make the load simpler?
 typedef struct GBAMemory {
     // General Internal Memory
     u8 bios_system_rom[16*KILOBYTE];
-    // 00004000-01FFFFFF   Not used
     u8 ewram[256*KILOBYTE];
-    // 02040000-02FFFFFF   Not used
     u8 iwram[32*KILOBYTE];
-    // 03008000-03FFFFFF   Not used
     u8 io_registers[1*KILOBYTE];
-    // 04000400-04FFFFFF   Not used
 
     // Internal Display Memory
     u8 bg_obj_palette_ram[1*KILOBYTE];
-    // 05000400-05FFFFFF   Not used
     u8 vram[96*KILOBYTE];
-    // 06018000-06FFFFFF   Not used
     u8 oam_obj_attributes[1*KILOBYTE];
-    // 07000400-07FFFFFF   Not used
 
     // External Memory (Game Pak)
     u8 game_pak_rom[32*MEGABYTE];
-    // u8 game_pak_rom_wait_state_1[32*MEGABYTE];
-    // u8 game_pak_rom_wait_state_2[32*MEGABYTE];
     u8 game_pak_ram[64*MEGABYTE];
-    // 0E010000-0FFFFFFF   Not used
-
-    // Unused Memory Area
-    // 10000000-FFFFFFFF   Not used (upper 4bits of address bus unused)
-
 } GBAMemory;
 
 

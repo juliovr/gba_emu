@@ -203,8 +203,10 @@ load_bios_into_memory()
 #define IO_BLDALPHA     ((u16 *)get_memory_at(cpu, &memory, 0x4000052))
 #define IO_BLDY         ((u16 *)get_memory_at(cpu, &memory, 0x4000054))
 
-#define VRAM_ADDRESS    (0x6000000)
-#define VRAM            ((u16 *)get_memory_at(cpu, &memory, VRAM_ADDRESS))
+#define REG_KEYINPUT    ((u16 *)get_memory_at(cpu, &memory, 0x4000130))
+#define REG_KEYCNT      ((u16 *)get_memory_at(cpu, &memory, 0x4000132))
+
+#define VRAM            ((u16 *)get_memory_at(cpu, &memory, 0x6000000))
 
 
 typedef struct DisplayControlRegister {
@@ -278,16 +280,16 @@ print_background_control(BackgroundControl *background_control, char *name)
     printf("  tile_map_size = 0x%08X\n", background_control->tile_map_size);
 }
 
+
 static void
 init_gba()
 {
     memset(&gba_cpu, 0, sizeof(CPU));
     memset(&memory, 0, sizeof(GBAMemory));
 
-    cpu->r13 = 0x03007F00;
+    cpu->sp = 0x03007F00;
     cpu->cpsr = 0x1F;
     cpu->pc = 0;
-    // cpu->pc = 0x08000000;
 
     load_bios_into_memory();
 
@@ -299,11 +301,6 @@ init_gba()
     // SOUNDBIAS - Sound PWM Control
     // This register controls the final sound output. The default setting is 0200h
     *(u16 *)get_memory_at(cpu, &memory, 0x04000088) = 0x0200;
-
-    *IO_BG2PA = 0x0100;
-    *IO_BG2PD = 0x0100;
-    *IO_BG3PA = 0x0100;
-    *IO_BG3PD = 0x0100;
 }
 
 /*
@@ -2443,17 +2440,17 @@ process_coprocessor_register_transfers()
     }
 }
 
-u32 *last_register_compared = 0;
-
-static int found = 0;
-
 void
 execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
 
-    if (decoded_instruction.address == 0x000003CC) {
-        found = 1;
+    if (decoded_instruction.address == 0x8000000) {
+        // Setting the default values for key pressed.
+        // 0: Key is pressed
+        // 1: Key is not pressed
+        // There are 10 buttons, son this set all available buttons (not pressed).
+        *REG_KEYINPUT = 0x03FF;
     }
     
     if (IN_THUMB_MODE) {
@@ -3007,6 +3004,44 @@ fill_video_buffer(u32 *buffer)
     }
 }
 
+#define KEY_BIT_A           0
+#define KEY_BIT_B           1
+#define KEY_BIT_SELECT      2
+#define KEY_BIT_START       3
+#define KEY_BIT_RIGHT       4
+#define KEY_BIT_LEFT        5
+#define KEY_BIT_UP          6
+#define KEY_BIT_DOWN        7
+#define KEY_BIT_R_TRIGGER   8
+#define KEY_BIT_L_TRIGGER   9
+
+int keys[] = {
+    [KEY_BIT_A]         = KEY_Z,
+    [KEY_BIT_B]         = KEY_X,
+    [KEY_BIT_SELECT]    = KEY_RIGHT_SHIFT,
+    [KEY_BIT_START]     = KEY_ENTER,
+    [KEY_BIT_RIGHT]     = KEY_RIGHT,
+    [KEY_BIT_LEFT]      = KEY_LEFT,
+    [KEY_BIT_UP]        = KEY_UP,
+    [KEY_BIT_DOWN]      = KEY_DOWN,
+    [KEY_BIT_R_TRIGGER] = KEY_S,
+    [KEY_BIT_L_TRIGGER] = KEY_A,
+};
+
+
+static void
+mark_pressed_keys()
+{
+    int key_count = sizeof(keys) / sizeof(int);
+    for (int i = 0; i <= key_count; ++i) {
+        int key = keys[i];
+        if (IsKeyDown(key)) {
+            *REG_KEYINPUT &= ~(1 << i);
+        } else {
+            *REG_KEYINPUT |= (1 << i);
+        }
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -3038,8 +3073,11 @@ int main(int argc, char *argv[])
 
         if (!paused) {
             run();
+            
+            mark_pressed_keys();
         }
         
+
 
         BackgroundControl bg0cnt = {0};
         BackgroundControl bg1cnt = {0};
@@ -3082,28 +3120,27 @@ int main(int argc, char *argv[])
                 DrawText("Paused", (int)(WINDOW_WIDTH*0.5), (int)(WINDOW_HEIGHT*0.5), 40, GREEN);
             }
 
-            DRAW_TEXT("Cycles = %lld", cpu->cycles);
-            DRAW_TEXT("Frame = %d", current_frame);
-            DRAW_TEXT("GetFPS() = %d", GetFPS());
+            DRAW_TEXT("KEYINPUT: 0x%08X", *REG_KEYINPUT);
+            DRAW_TEXT("REG_KEYCNT: 0x%08X", *REG_KEYCNT);
 
-            DRAW_TEXT("IO_DISPCNT = 0x%08X", *IO_DISPCNT);
-            DRAW_TEXT("IO_BG0CNT = 0x%08X", *IO_BG0CNT);
-            DRAW_TEXT("IO_BG1CNT = 0x%08X", *IO_BG1CNT);
-            DRAW_TEXT("IO_BG2CNT = 0x%08X", *IO_BG2CNT);
-            DRAW_TEXT("IO_BG3CNT = 0x%08X", *IO_BG3CNT);
+            // DRAW_TEXT("Cycles = %lld", cpu->cycles);
+            // DRAW_TEXT("Frame = %d", current_frame);
+            // DRAW_TEXT("GetFPS() = %d", GetFPS());
+
+            // DRAW_TEXT("IO_DISPCNT = 0x%08X", *IO_DISPCNT);
+            // DRAW_TEXT("IO_BG0CNT = 0x%08X", *IO_BG0CNT);
+            // DRAW_TEXT("IO_BG1CNT = 0x%08X", *IO_BG1CNT);
+            // DRAW_TEXT("IO_BG2CNT = 0x%08X", *IO_BG2CNT);
+            // DRAW_TEXT("IO_BG3CNT = 0x%08X", *IO_BG3CNT);
 
             // CPU state
-            DRAW_TEXT("");
-            DRAW_TEXT(" r0: 0x%08X     r1: 0x%08X     r2: 0x%08X     r3: 0x%08X", cpu->r0, cpu->r1, cpu->r2, cpu->r3);
-            DRAW_TEXT(" r4: 0x%08X     r5: 0x%08X     r6: 0x%08X     r7: 0x%08X", cpu->r4, cpu->r5, cpu->r6, cpu->r7);
-            DRAW_TEXT(" r8: 0x%08X     r9: 0x%08X    r10: 0x%08X    r11: 0x%08X", cpu->r8, cpu->r9, cpu->r10, cpu->r11);
-            DRAW_TEXT("r12: 0x%08X    r13: 0x%08X    r14: 0x%08X    r15: 0x%08X", cpu->r12, cpu->r13, cpu->r14, cpu->r15);
-            DRAW_TEXT("CPSR: 0x%08X", cpu->cpsr);
-            DRAW_TEXT("0x%08X: 0x%08X", decoded_instruction.address, decoded_instruction.encoding);
-
-            if (found) {
-                DRAW_TEXT("FOUND");
-            }
+            // DRAW_TEXT("");
+            // DRAW_TEXT(" r0: 0x%08X     r1: 0x%08X     r2: 0x%08X     r3: 0x%08X", cpu->r0, cpu->r1, cpu->r2, cpu->r3);
+            // DRAW_TEXT(" r4: 0x%08X     r5: 0x%08X     r6: 0x%08X     r7: 0x%08X", cpu->r4, cpu->r5, cpu->r6, cpu->r7);
+            // DRAW_TEXT(" r8: 0x%08X     r9: 0x%08X    r10: 0x%08X    r11: 0x%08X", cpu->r8, cpu->r9, cpu->r10, cpu->r11);
+            // DRAW_TEXT("r12: 0x%08X    r13: 0x%08X    r14: 0x%08X    r15: 0x%08X", cpu->r12, cpu->r13, cpu->r14, cpu->r15);
+            // DRAW_TEXT("CPSR: 0x%08X", cpu->cpsr);
+            // DRAW_TEXT("0x%08X: 0x%08X", decoded_instruction.address, decoded_instruction.encoding);
 
         EndDrawing();
 #endif
