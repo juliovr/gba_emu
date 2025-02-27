@@ -4,7 +4,11 @@
 
 #include <math.h>
 #include "../include/raylib.h"
+
 #include "types.h"
+#include "cpu.h"
+#include "memory.h"
+#include "instruction.h"
 
 
 #ifdef _DEBUG_PRINT
@@ -335,58 +339,6 @@ typedef struct CartridgeHeader {
 } CartridgeHeader;
 
 
-static void
-get_instruction_type_name(InstructionType type, char *buffer)
-{
-    switch (type) {
-        case INSTRUCTION_NONE: strcpy(buffer, "INSTRUCTION_NONE"); break;
-        case INSTRUCTION_B: strcpy(buffer, "INSTRUCTION_B"); break;
-        case INSTRUCTION_BX: strcpy(buffer, "INSTRUCTION_BX"); break;
-        case INSTRUCTION_AND: strcpy(buffer, "INSTRUCTION_AND"); break;
-        case INSTRUCTION_EOR: strcpy(buffer, "INSTRUCTION_EOR"); break;
-        case INSTRUCTION_SUB: strcpy(buffer, "INSTRUCTION_SUB"); break;
-        case INSTRUCTION_RSB: strcpy(buffer, "INSTRUCTION_RSB"); break;
-        case INSTRUCTION_ADD: strcpy(buffer, "INSTRUCTION_ADD"); break;
-        case INSTRUCTION_ADC: strcpy(buffer, "INSTRUCTION_ADC"); break;
-        case INSTRUCTION_SBC: strcpy(buffer, "INSTRUCTION_SBC"); break;
-        case INSTRUCTION_RSC: strcpy(buffer, "INSTRUCTION_RSC"); break;
-        case INSTRUCTION_TST: strcpy(buffer, "INSTRUCTION_TST"); break;
-        case INSTRUCTION_TEQ: strcpy(buffer, "INSTRUCTION_TEQ"); break;
-        case INSTRUCTION_CMP: strcpy(buffer, "INSTRUCTION_CMP"); break;
-        case INSTRUCTION_CMN: strcpy(buffer, "INSTRUCTION_CMN"); break;
-        case INSTRUCTION_ORR: strcpy(buffer, "INSTRUCTION_ORR"); break;
-        case INSTRUCTION_MOV: strcpy(buffer, "INSTRUCTION_MOV"); break;
-        case INSTRUCTION_BIC: strcpy(buffer, "INSTRUCTION_BIC"); break;
-        case INSTRUCTION_MVN: strcpy(buffer, "INSTRUCTION_MVN"); break;
-        case INSTRUCTION_MRS: strcpy(buffer, "INSTRUCTION_MRS"); break;
-        case INSTRUCTION_MSR: strcpy(buffer, "INSTRUCTION_MSR"); break;
-        case INSTRUCTION_MUL: strcpy(buffer, "INSTRUCTION_MUL"); break;
-        case INSTRUCTION_MLA: strcpy(buffer, "INSTRUCTION_MLA"); break;
-        case INSTRUCTION_MULL: strcpy(buffer, "INSTRUCTION_MULL"); break;
-        case INSTRUCTION_MLAL: strcpy(buffer, "INSTRUCTION_MLAL"); break;
-        case INSTRUCTION_LDR: strcpy(buffer, "INSTRUCTION_LDR"); break;
-        case INSTRUCTION_STR: strcpy(buffer, "INSTRUCTION_STR"); break;
-        case INSTRUCTION_LDRH_IMM: strcpy(buffer, "INSTRUCTION_LDRH_IMM"); break;
-        case INSTRUCTION_STRH_IMM: strcpy(buffer, "INSTRUCTION_STRH_IMM"); break;
-        case INSTRUCTION_LDRSB_IMM: strcpy(buffer, "INSTRUCTION_LDRSB_IMM"); break;
-        case INSTRUCTION_LDRSH_IMM: strcpy(buffer, "INSTRUCTION_LDRSH_IMM"); break;
-        case INSTRUCTION_LDRH: strcpy(buffer, "INSTRUCTION_LDRH"); break;
-        case INSTRUCTION_STRH: strcpy(buffer, "INSTRUCTION_STRH"); break;
-        case INSTRUCTION_LDRSB: strcpy(buffer, "INSTRUCTION_LDRSB"); break;
-        case INSTRUCTION_LDRSH: strcpy(buffer, "INSTRUCTION_LDRSH"); break;
-        case INSTRUCTION_LDM: strcpy(buffer, "INSTRUCTION_LDM"); break;
-        case INSTRUCTION_STM: strcpy(buffer, "INSTRUCTION_STM"); break;
-        case INSTRUCTION_SWP: strcpy(buffer, "INSTRUCTION_SWP"); break;
-        case INSTRUCTION_SWI: strcpy(buffer, "INSTRUCTION_SWI"); break;
-        case INSTRUCTION_CDP: strcpy(buffer, "INSTRUCTION_CDP"); break;
-        case INSTRUCTION_STC: strcpy(buffer, "INSTRUCTION_STC"); break;
-        case INSTRUCTION_LDC: strcpy(buffer, "INSTRUCTION_LDC"); break;
-        case INSTRUCTION_MCR: strcpy(buffer, "INSTRUCTION_MCR"); break;
-        case INSTRUCTION_MRC: strcpy(buffer, "INSTRUCTION_MRC"); break;
-    }
-}
-
-
 static int
 should_execute_instruction(Condition condition)
 {
@@ -408,8 +360,7 @@ should_execute_instruction(Condition condition)
         case CONDITION_AL: return true; // Always
         default: {
             fprintf(stderr, "Unexpected condition: %08X\n", condition);
-            char type_name[64];
-            get_instruction_type_name(decoded_instruction.type, type_name);
+            char *type_name = get_instruction_type_string(decoded_instruction.type);
             fprintf(stderr, "Address: 0x%08X, Current instruction: 0x%08X -> type = %s\n", decoded_instruction.address, current_instruction, type_name);
 
             print_cpu_state(cpu);
