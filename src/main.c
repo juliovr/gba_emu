@@ -23,6 +23,10 @@ CPU *cpu = &gba_cpu;
 
 GBAMemory memory = {0};
 
+u32 current_instruction;
+Instruction decoded_instruction;
+
+
 static u8 paused = 0;
 
 
@@ -128,10 +132,10 @@ load_cartridge_into_memory(char *filename)
     } else {
         fseek(file, 0, SEEK_END);
         int size = ftell(file);
+        fseek(file, 0, SEEK_SET);
         
         assert(size <= 32*MEGABYTE);
         
-        fseek(file, 0, SEEK_SET);
         fread(memory.game_pak_rom, size, 1, file);
 
         fclose(file);
@@ -382,10 +386,6 @@ get_instruction_type_name(InstructionType type, char *buffer)
     }
 }
 
-u32 current_instruction;
-
-Instruction decoded_instruction;
-Instruction last_instruction;
 
 static int
 should_execute_instruction(Condition condition)
@@ -2446,7 +2446,7 @@ execute()
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
 
     if (decoded_instruction.address == 0x8000000) {
-        // Setting the default values for key pressed.
+        // Setting all keys as "released" when the game begins (the bios "pressed" all the buttons).
         // 0: Key is pressed
         // 1: Key is not pressed
         // There are 10 buttons, son this set all available buttons (not pressed).
@@ -2508,7 +2508,6 @@ execute()
     }
 
 exit_execute:
-    last_instruction = decoded_instruction;
     decoded_instruction = (Instruction){0};
 }
 
@@ -2888,15 +2887,7 @@ static u32 current_frame = 0;
 static void
 run()
 {
-    // Emulating pipelining.
-    // while (is_running) {
-    //     execute();
-    //     decode();
-    //     fetch();
-    // }
-
     while (cpu->cycles / CPU_CYCLES_PER_FRAME <= current_frame) {
-        
         execute();
         set_lcd_io();
         
@@ -2916,33 +2907,6 @@ run()
 #define SCALE                   (10)    /* Pixel scale */
 #define WINDOW_WIDTH            (SCREEN_WIDTH*SCALE)
 #define WINDOW_HEIGHT           (SCREEN_HEIGHT*SCALE)
-
-// Audio
-#define MAX_SAMPLES             512
-#define MAX_SAMPLES_PER_UPDATE  4096
-#define SAMPLE_RATE             44100
-#define SAMPLE_SIZE             16
-#define NUMBER_OF_CHANNELS      2
-
-static float frequency = 440.0f;
-// Index for audio rendering
-static float sine_idx = 0.0f;
-
-// Audio input processing callback
-static void AudioInputCallback(void *buffer, unsigned int frames)
-{
-    float incr = frequency/SAMPLE_RATE;
-    short *d = (short *)buffer;
-
-    for (unsigned int i = 0; i < frames; i++)
-    {
-        d[i] = (short)(32000.0f*sinf(2*PI*sine_idx));
-        sine_idx += incr;
-        if (sine_idx > 1.0f) {
-            sine_idx -= 1.0f;
-        }
-    }
-}
 
 
 static int text_height = 30;
@@ -3059,7 +3023,7 @@ int main(int argc, char *argv[])
 
 
     InitWindow(WINDOW_WIDTH, WINDOW_HEIGHT, filename);
-    // SetTargetFPS(60);
+    SetTargetFPS(60);
 
     u32 *video_buffer = (u32 *)malloc(VIDEO_BUFFER_SIZE*sizeof(u32));
 
@@ -3078,22 +3042,8 @@ int main(int argc, char *argv[])
         }
         
 
-
-        BackgroundControl bg0cnt = {0};
-        BackgroundControl bg1cnt = {0};
-        BackgroundControl bg2cnt = {0};
-        BackgroundControl bg3cnt = {0};
-        parse_background_layer_configuration(&bg0cnt, *IO_BG0CNT);
-        parse_background_layer_configuration(&bg1cnt, *IO_BG1CNT);
-        parse_background_layer_configuration(&bg2cnt, *IO_BG2CNT);
-        parse_background_layer_configuration(&bg3cnt, *IO_BG3CNT);
-
-        
-        //
-        // Draw buffer
-        //
         fill_video_buffer(video_buffer);
-#if 1
+
         BeginDrawing();
             for (int i = 0; i < SCREEN_HEIGHT; i++) {
                 for (int j = 0; j < SCREEN_WIDTH; j++) {
@@ -3116,6 +3066,7 @@ int main(int argc, char *argv[])
                 }
             }
 
+#ifdef _DEBUG
             if (paused) {
                 DrawText("Paused", (int)(WINDOW_WIDTH*0.5), (int)(WINDOW_HEIGHT*0.5), 40, GREEN);
             }
@@ -3141,10 +3092,9 @@ int main(int argc, char *argv[])
             // DRAW_TEXT("r12: 0x%08X    r13: 0x%08X    r14: 0x%08X    r15: 0x%08X", cpu->r12, cpu->r13, cpu->r14, cpu->r15);
             // DRAW_TEXT("CPSR: 0x%08X", cpu->cpsr);
             // DRAW_TEXT("0x%08X: 0x%08X", decoded_instruction.address, decoded_instruction.encoding);
+#endif // _DEBUG
 
         EndDrawing();
-#endif
-
     }
 
 #ifdef _DEBUG
