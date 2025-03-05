@@ -449,7 +449,6 @@ thumb_execute()
                 result = first_value + second_value;
 
                 set_condition_C((result < second_value) ? 1 : 0);
-                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 set_overflow_addition(first_value, second_value, result);
             }
 
@@ -479,7 +478,6 @@ thumb_execute()
                     result = *rd + decoded_instruction.offset;
 
                     set_condition_C((result < (u32)decoded_instruction.offset) ? 1 : 0);
-                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     set_overflow_addition(*rd, decoded_instruction.offset, result);
                     
                     *rd = result;
@@ -585,7 +583,6 @@ thumb_execute()
                     store_result = true;
 
                     set_condition_C((result < *rd) ? 1 : 0); // TODO: check
-                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                     set_overflow_addition(*rd, *rs + CONDITION_C, result);
                     cpu->cycles++;
                 } break;
@@ -642,8 +639,6 @@ thumb_execute()
                     store_result = false;
 
                     set_condition_C((result < *rd) ? 1 : 0);
-                    // set_condition_C(*rs <= *rd ? 1 : 0);
-                    // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1)); // TODO: check
                     set_overflow_addition(*rd, *rs, result);
                     cpu->cycles++;
                 } break;
@@ -1449,7 +1444,6 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C((result < second_operand) ? 1 : 0);
-                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 set_overflow_addition(rn, second_operand, result);
             }
         } break;
@@ -1514,7 +1508,6 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C((result < second_operand) ? 1 : 0);
-                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 set_overflow_addition(rn, second_operand + CONDITION_C, result);
             }
         } break;
@@ -1593,7 +1586,6 @@ process_data_processing()
                 set_condition_Z(result == 0);
                 set_condition_N(result >> 31);
                 set_condition_C((result < second_operand) ? 1 : 0);
-                // set_condition_V(((*rd & 0x80000000) == 0) && ((result & 0x80000000) == 1));
                 set_overflow_addition(rn, second_operand, result);
             }
         } break;
@@ -1655,7 +1647,6 @@ process_data_processing()
         *rd = result;
 
         if (decoded_instruction.rd == 15) {
-            assert(!"OK");
             current_instruction = 0;
             
             extra_cpu_cycles += 2;
@@ -2391,17 +2382,22 @@ process_coprocessor_register_transfers()
     }
 }
 
+static bool first_instruction_cartridge_executed = false;
+
 void
 execute()
 {
     if (decoded_instruction.type == INSTRUCTION_NONE) goto exit_execute;
 
-    if (decoded_instruction.address == 0x8000000) {
+    // Do it only once the game starts.
+    if (!first_instruction_cartridge_executed && decoded_instruction.address == 0x8000000) {
         // Setting all keys as "released" when the game begins (the bios "pressed" all the buttons).
         // 0: Key is pressed
         // 1: Key is not pressed
         // There are 10 buttons, son this set all available buttons (not pressed).
         *REG_KEYINPUT = 0x03FF;
+
+        first_instruction_cartridge_executed = true;
     }
     
     if (IN_THUMB_MODE) {
@@ -3025,9 +3021,9 @@ int main(int argc, char *argv[])
             DRAW_TEXT("KEYINPUT: 0x%08X", *REG_KEYINPUT);
             DRAW_TEXT("REG_KEYCNT: 0x%08X", *REG_KEYCNT);
 
-            // DRAW_TEXT("Cycles = %lld", cpu->cycles);
-            // DRAW_TEXT("Frame = %d", current_frame);
-            // DRAW_TEXT("GetFPS() = %d", GetFPS());
+            DRAW_TEXT("Cycles = %lld", cpu->cycles);
+            DRAW_TEXT("Frame = %d", current_frame);
+            DRAW_TEXT("GetFPS() = %d", GetFPS());
 
             // DRAW_TEXT("IO_DISPCNT = 0x%08X", *IO_DISPCNT);
             // DRAW_TEXT("IO_BG0CNT = 0x%08X", *IO_BG0CNT);
